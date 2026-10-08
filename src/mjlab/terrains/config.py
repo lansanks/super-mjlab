@@ -286,9 +286,9 @@ ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
   num_cols=20,
   sub_terrains={
     "flat": flat(proportion=0.2),
-    "pyramid_stairs": pyramid_stairs(proportion=0.2, step_height_range=(0.0, 0.1)),
+    "pyramid_stairs": pyramid_stairs(proportion=0.2, step_height_range=(0.0, 0.2)),
     "pyramid_stairs_inv": pyramid_stairs_inv(
-      proportion=0.2, step_height_range=(0.0, 0.1)
+      proportion=0.2, step_height_range=(0.0, 0.2)
     ),
     "hf_pyramid_slope": hf_pyramid_slope(proportion=0.1, slope_range=(0.0, 1.0)),
     "hf_pyramid_slope_inv": hf_pyramid_slope_inv(

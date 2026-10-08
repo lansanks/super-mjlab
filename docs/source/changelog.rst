@@ -8,8 +8,16 @@ Upcoming version (not yet released)
 Added
 ^^^^^
 
+- Added the ``Mjlab-DreamWaQ-Rough-Unitree-Go1`` task, a reproduction of
+  DreamWaQ (implicit terrain imagination via a context-aided estimator). It
+  pairs a 5-frame proprioceptive history with a CENet-based actor model and a
+  PPO variant that learns the estimator and the policy jointly.
+
 - Added ``SimulationCfg.graph_conditional`` to toggle MuJoCo Warp's CUDA graph
   conditional nodes, which require CUDA 12.4 or newer.
+
+- Added Chinese translations of the CartPole tutorial and demo notebooks under
+  ``notebooks/CN/``.
 
 Changed
 ^^^^^^^
