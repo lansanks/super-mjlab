@@ -10,8 +10,39 @@ Added
 
 - Added the ``Mjlab-DreamWaQ-Rough-Unitree-Go1`` task, a reproduction of
   DreamWaQ (implicit terrain imagination via a context-aided estimator). It
-  pairs a 5-frame proprioceptive history with a CENet-based actor model and a
+  pairs a six-frame proprioceptive history with a CENet-based actor model and a
   PPO variant that learns the estimator and the policy jointly.
+
+- Added optional ``cenet_cfg`` and ``dreamwaq_cfg`` fields to ``RslRlModelCfg``
+  and ``RslRlPpoAlgorithmCfg`` so the DreamWaQ CENet and the weights of its
+  auxiliary losses can be tuned from the RL configuration.
+
+- Added AdaBoot (adaptive bootstrapping) to the DreamWaQ task: once per rollout
+  each environment replaces the CENet velocity estimate with the simulated
+  ground truth with probability ``1 - p_boot``, where
+  ``p_boot = 1 - tanh(CV(R))`` is recomputed from the returns of the most
+  recently completed episodes. The mask is stored in the rollout storage so the
+  update reproduces the rollout's policy input exactly, and the AdaBoot state is
+  saved in and restored from checkpoints. The CENet auxiliary losses (plus their
+  weighted total) are printed with the PPO losses, and the body-frame velocity
+  estimation error, the per-term reconstruction errors (both as percentages of
+  each signal's own fluctuation) and the AdaBoot probability are logged under
+  ``Metrics/``.
+
+- Added a predicted-velocity debug arrow to the DreamWaQ play viewer: the
+  CENet's body-velocity estimate is published by the play policy and drawn in
+  magenta (``CENet v_hat``) next to the commanded and measured velocity arrows.
+
+- Added latent diagnostics to the DreamWaQ metrics: ``Metrics/latent_drift``
+  (per-step change of the posterior mean) and ``Metrics/latent_spread``
+  (between-environment differences) show whether the context vector behaves
+  like a slow context or a fast memory when tuning the KL weight.
+
+- Clipped DreamWaQ's unbounded proprioceptive observations (``joint_vel``,
+  ``base_ang_vel``, ``actions``, ``joint_pos`` and the critic's
+  ``base_lin_vel``) so a rare violent simulation state cannot blow up a PPO
+  mini-batch through an extreme sample, and added an ``Episode_Metrics/peak_joint_vel``
+  metric to watch for such states.
 
 - Added ``SimulationCfg.graph_conditional`` to toggle MuJoCo Warp's CUDA graph
   conditional nodes, which require CUDA 12.4 or newer.
@@ -22,6 +53,10 @@ Added
 Changed
 ^^^^^^^
 
+- ``get_base_metadata`` accepts an optional ``obs_group`` argument (defaults to
+  ``"actor"``) so tasks whose policy input is an observation history can
+  describe the group the exported model actually consumes.
+
 - Bumped ``rsl-rl-lib`` from 5.5.0 to 5.5.1. This removes the need for capping
   ``wandb`` below 0.29.
 
@@ -31,6 +66,17 @@ Changed
 
 Fixed
 ^^^^^
+
+- DreamWaQ training no longer crashes with a CUDA ``device-side assert`` when
+  the CENet posterior diverges: the log-variance is clamped to ``[-10, 10]``
+  before it reaches the KL term, and PPO mini-batches with a non-finite loss or
+  gradient norm are skipped instead of poisoning the parameters.
+
+- DreamWaQ's exported ONNX metadata now describes the CENet observation history
+  (six frames of proprioception) instead of the 45-dim actor observation, and
+  the DreamWaQ ONNX export fails loudly when the policy consumes more than one
+  observation group. The critic also observes the simulator's ground-truth base
+  linear velocity and the velocity kick applied by the most recent push.
 
 - Capped ``wandb`` below 0.29, which removed the ``start_method`` setting still passed
   by ``rsl-rl-lib`` and crashed training runs launched with ``--logger wandb``.

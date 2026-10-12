@@ -58,6 +58,7 @@ class CENet(nn.Module):
     activation: str = "elu",
     obs_normalization: bool = True,
     history_order: Literal["oldest_first", "newest_first"] = "oldest_first",
+    log_var_range: tuple[float, float] = (-10.0, 10.0),
   ) -> None:
     """Initialize CENet.
 
@@ -76,12 +77,16 @@ class CENet(nn.Module):
         matches mjlab's observation history buffers, ``"newest_first"`` matches
         the paper's ``[o_t, ..., o_{t-H}]``. Frames are converted to the paper
         order internally.
+      log_var_range: Bounds on the posterior log-variance. ``exp(log_var)``
+        overflows to infinity beyond ~88, which turns the KL term (and its
+        gradients) into NaN and poisons every parameter sharing the optimizer.
     """
     super().__init__()
     self.obs_dim = obs_dim
     self.history_length = history_length
     self.latent_dim = latent_dim
     self.history_order = history_order
+    self.log_var_range = (float(log_var_range[0]), float(log_var_range[1]))
 
     # One set of per-dimension statistics is shared by every frame of the
     # history and by the reconstruction target of the decoder.
@@ -140,7 +145,11 @@ class CENet(nn.Module):
     output = self.encoder(latent.flatten(start_dim=-2))
     velocity = output[..., : self.velocity_dim]
     mu = output[..., self.velocity_dim : self.velocity_dim + self.latent_dim]
-    log_var = output[..., self.velocity_dim + self.latent_dim :]
+    # Keep the posterior bounded: the KL term evaluates exp(log_var), so an
+    # unbounded log-variance produces inf/NaN losses and gradients.
+    log_var = output[..., self.velocity_dim + self.latent_dim :].clamp(
+      self.log_var_range[0], self.log_var_range[1]
+    )
     return velocity, mu, log_var
 
   def decode(self, z: torch.Tensor) -> torch.Tensor:

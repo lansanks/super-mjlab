@@ -156,7 +156,7 @@ def unitree_go1_rough_env_cfg(
       "ranges": (0.3, 1.5),
       "shared_random": True,
     },
-  )#滑动摩擦
+  )  # 滑动摩擦
   cfg.events["foot_friction_spin"] = EventTermCfg(
     mode="startup",
     func=envs_mdp.dr.geom_friction,
@@ -168,7 +168,7 @@ def unitree_go1_rough_env_cfg(
       "ranges": (1e-4, 2e-2),
       "shared_random": True,
     },
-  )#扭转摩擦
+  )  # 扭转摩擦
   cfg.events["foot_friction_roll"] = EventTermCfg(
     mode="startup",
     func=envs_mdp.dr.geom_friction,
@@ -180,7 +180,7 @@ def unitree_go1_rough_env_cfg(
       "ranges": (1e-5, 5e-3),
       "shared_random": True,
     },
-  )#滚动摩擦
+  )  # 滚动摩擦
   cfg.events["base_com"].params["asset_cfg"].body_names = ("trunk",)
 
   cfg.rewards["pose"].params["std_standing"] = {

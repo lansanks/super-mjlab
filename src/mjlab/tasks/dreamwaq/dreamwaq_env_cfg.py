@@ -82,10 +82,14 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
     #   params={"sensor_name": "robot/imu_lin_vel"},
     #   noise=Unoise(n_min=-0.5, n_max=0.5),
     # ),
+    # The clips bound the damage of a rare violent simulation state: a single
+    # environment with, e.g., an exploding joint velocity can otherwise inject
+    # a huge sample into a PPO mini-batch and destroy the policy in one step.
     "base_ang_vel": ObservationTermCfg(
       func=mdp.builtin_sensor,
       params={"sensor_name": "robot/imu_ang_vel"},
       noise=Unoise(n_min=-0.2, n_max=0.2),
+      clip=(-30.0, 30.0),
     ),
     "projected_gravity": ObservationTermCfg(
       func=mdp.projected_gravity,
@@ -95,12 +99,14 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
       func=mdp.joint_pos_rel,
       params={"biased": True},
       noise=Unoise(n_min=-0.01, n_max=0.01),
+      clip=(-3.0, 3.0),
     ),
     "joint_vel": ObservationTermCfg(
       func=mdp.joint_vel_rel,
       noise=Unoise(n_min=-1.5, n_max=1.5),
+      clip=(-50.0, 50.0),
     ),
-    "actions": ObservationTermCfg(func=mdp.last_action),
+    "actions": ObservationTermCfg(func=mdp.last_action, clip=(-20.0, 20.0)),
     "command": ObservationTermCfg(
       func=mdp.generated_commands,
       params={"command_name": "twist"},
@@ -115,6 +121,17 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
 
   critic_terms = {
     **actor_terms,
+    # Privileged ground-truth base linear velocity v_t (paper Eq. 2). The actor
+    # observation deliberately excludes it, so it must be added back here.
+    "base_lin_vel": ObservationTermCfg(
+      func=envs_mdp.base_lin_vel,
+      params={"asset_cfg": SceneEntityCfg("robot")},
+      clip=(-10.0, 10.0),
+    ),
+    # Privileged disturbance d_t (paper Eq. 2): the velocity kick applied by
+    # the most recent push, in the root body frame. Zero until the first push
+    # of an episode and while the push event is disabled (play mode).
+    "push_velocity": ObservationTermCfg(func=mdp.push_velocity),
     # Critic sees the true (unbiased) joint positions as privileged information.
     "joint_pos": ObservationTermCfg(func=mdp.joint_pos_rel),
     "height_scan": ObservationTermCfg(
@@ -152,16 +169,16 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
       enable_corruption=False,
     ),
     "cenet_input": ObservationGroupCfg(
-      terms=actor_terms,         
+      terms=actor_terms,
       concatenate_terms=True,
-      enable_corruption=True,    
+      enable_corruption=True,
       history_length=6,
-      flatten_history_dim=False,  
+      flatten_history_dim=False,
     ),
     "cenet_target_o": ObservationGroupCfg(
-      terms=actor_terms,           # 同一套 term，但干净、不带 history
+      terms=actor_terms,  # 同一套 term，但干净、不带 history
       concatenate_terms=True,
-      enable_corruption=False,     # → (N, 45)，训练时错一格当 o_{t+1}
+      enable_corruption=False,  # → (N, 45)，训练时错一格当 o_{t+1}
     ),
     "cenet_target_v": ObservationGroupCfg(
       terms={
@@ -171,7 +188,7 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
       },
       concatenate_terms=True,
-      enable_corruption=False,     # → (N, 3)，仿真真值 v_t
+      enable_corruption=False,  # → (N, 3)，仿真真值 v_t
     ),
   }
 
@@ -183,6 +200,9 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
     "mean_action_acc": MetricsTermCfg(
       func=mdp.mean_action_acc,
     ),
+    # Worst joint velocity of the episode: catches violent simulation states
+    # before they can blow up training through an extreme observation sample.
+    "peak_joint_vel": MetricsTermCfg(func=mdp.peak_joint_vel, reduce="max"),
   }
 
   ##
@@ -249,7 +269,7 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
       },
     ),
     "push_robot": EventTermCfg(
-      func=mdp.push_by_setting_velocity,
+      func=mdp.push_by_setting_velocity_with_record,
       mode="interval",
       interval_range_s=(1.0, 3.0),
       params={
@@ -261,6 +281,7 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
           "pitch": (-0.52, 0.52),
           "yaw": (-0.78, 0.78),
         },
+        "asset_cfg": SceneEntityCfg("robot"),
       },
     ),
     "foot_friction": EventTermCfg(

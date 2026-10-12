@@ -3,6 +3,7 @@
 > 本文只描述"怎么改"，不含任何代码改动。
 > 依据只有两处：论文 `src/mjlab/tasks/dreamwaq/doc/dreamwaq.pdf` 和当前仓库代码。
 > 当前仓库的 actor 观测组（45 维）和 critic 观测组（特权观测）保持现状，不要求与论文完全一致。
+> 各轮训练的实验数据、曲线读数与阶段性结论见 `../实验记录.md`。
 
 ---
 
@@ -164,6 +165,9 @@ total  = L_PPO + λ · L_CE
 - `L_PPO` = surrogate + value_loss_coef · value_loss − entropy_coef · entropy（rsl_rl 现有逻辑不变）；
 - 一次 `backward()`，一次 optimizer step。CENet 参数在 actor 内，`chain(actor.parameters(), critic.parameters())` 自动包含，梯度裁剪、保存、加载都不用改；
 - `loss_dict` 里追加 `cenet_est`、`cenet_recon`、`cenet_kl`，runner 会自动记进 wandb。
+  另有加权总量 `cenet_total = ce_coef · (L_est + L_rec + β·L_kl)`，便于判断辅助损失
+  相对 PPO 损失的量级；rsl_rl 的 logger 会把 `loss_dict` 每一项打印成 `Mean xxx loss`
+  并写入 wandb 的 `Loss/` 组。
 
 **第三步：更新归一化统计**
 
@@ -176,6 +180,45 @@ PPO 原有的 `update_normalization` 照常调用，但我们的覆写要同时�
 - `cenet_input` 的 270 维（按帧拆成 45 维）过 running normalizer 再进编码器；
 - 重建目标 `o_{t+1}` 用同一套 normalizer 变换后再算 MSE；
 - actor 自己的 o_t 输入照旧走 `obs_normalization=True`。
+
+### 5.4 AdaBoot（已实现）
+
+论文 Eq. 8：`p_boot = 1 − tanh(CV(R))`，R 是各环境 episodic reward 向量，每个 learning
+iteration 算一次；p_boot 是"actor 用 CENet 估计值 v̂"的概率，剩下的概率用真值 v_t。
+
+```text
+rollout：p_boot 来自上一轮 → 每个环境掷一次骰子 → mask (T,N,1)
+         obs["cenet_boot_flag"] = mask
+         actor 输入:  v = mask · v̂  +  (1 − mask) · v_t（cenet_target_v）
+         mask 写入 buffer，rollout 结束后注入 RolloutStorage
+update ：minibatch 里带同一份 mask → 重算 log-prob 时输入与 rollout 完全一致
+compute_returns 末尾：用本轮结算的 episode return 更新 p_boot（下一轮生效）
+```
+
+- 只替换 3 维速度槽，z 恒用 μ；`L_est` / 重建 / critic（含 d_t）都不受影响；
+- mask 必须落盘复用，否则 rollout 与 update 的 actor 输入不一致、PPO ratio 被污染；
+- ONNX 与 play 没有 `cenet_boot_flag`，恒用 v̂（部署时没有真值）；
+- 首轮 p_boot = 0；p_boot 与 episode-return 统计写进 checkpoint（`adaboot_state_dict`）。
+- 日志（走 `extras["log"]` → wandb `Metrics/` 组 + 控制台 episode extras 区）：
+  - `Metrics/velocity_est_error`：每步 `‖v̂ − v_t‖` 的均值，单位 m/s；
+  - `Metrics/est_vel_mean_pct`：速度估计误差的百分比形式，定义为
+    `100 · RMS_d(Δv_d / σ_d)`，σ_d 是 v_t 每轴的 running 标准差（`CenetMetrics` 自己维护
+    一套 `EmpiricalNormalization(3)`）。100% 表示"误差和该轴自身的波动幅度一样大"；
+  - `Metrics/recon_<term>_mean_pct`：重建误差按观测 term 拆开（base_ang_vel /
+    projected_gravity / joint_pos / joint_vel / actions / command），用同一套百分比定义，
+    解码器输入取后验均值 μ（确定性、无采样噪声，与训练损失用的采样 z 不同）；
+    term 切分默认按 Go1 DreamWaQ 的 45 维布局，可用 `dreamwaq_cfg["recon_terms"]` 覆盖，
+    与观测维度不符会直接报错；
+  - `Metrics/adaboot_pboot`（本轮生效的 p_boot）、`Metrics/adaboot_fraction`（本轮实际用
+    v̂ 的样本比例）。
+  - `Metrics/latent_drift`（`mean_env ‖μ_t − μ_{t−1}‖`，episode 重置步跳过）与
+    `Metrics/latent_spread`（`mean_env ‖μ_i − mean_robots μ‖`）：判断 z 是"慢变 context"
+    还是"快速记忆"——context 应该 drift 小、spread 大，`drift/spread` 是选 β 时的判据之一。
+  - 这些量必须在算法侧算（需要 CENet 前向和 running 统计），因此不能写成
+    `MetricsTermCfg`（那套 term 只能拿到 `env`）；实现放在 `rl/metrics.py`。
+
+细节与"论文没写清、由复现拍板"的三点（R 口径、骰子粒度、替换范围）见
+《论文未明确之处.md》第 3 条。
 
 ---
 
@@ -196,6 +239,10 @@ PPO 原有的 `update_normalization` 照常调用，但我们的覆写要同时�
 - `rl/runner.py`：ONNX metadata 目前按 actor 组生成，DreamWaQ 下应改成按 `cenet_input` 组生成（history_length=6），部署端才知道要喂 6 帧；
 - play 模式：现在 play 时会关掉 actor 组的噪声，`cenet_input` 组也要同步关掉。
 
+> 2026-10 更新：以上配套均已落地 —— `RslRlModelCfg.cenet_cfg` /
+> `RslRlPpoAlgorithmCfg.dreamwaq_cfg` 已加入公共配置，ONNX metadata 已按
+> `cenet_input` 组生成，play 模式同步关闭 `cenet_input` 噪声。
+
 ---
 
 ## 7. 容易踩的坑（重点看这一节）
@@ -210,6 +257,18 @@ PPO 原有的 `update_normalization` 照常调用，但我们的覆写要同时�
 8. **旧 checkpoint 不兼容**：actor 的 state_dict 会多出 `cenet.*` 的键，旧模型无法 strict 加载，需要从头训。
 9. **显存/内存**：每步多存 270 + 45 + 3 维，4096 envs × 24 steps 大约 100 MB 量级/轮，可接受。
 10. **噪声一致性（可选）**：`cenet_input` 和 `actor` 是两个组，各自独立采样噪声，数值上不会完全相同（分布相同）。论文里没有这个要求，先接受；将来若要严格一致，再考虑让两者共享同一份噪声实例。
+11. **后验参数必须 clamp**：KL 项里有 `exp(log_var)`，log_var 一旦漂到大数（>~88）就溢出成 inf，
+    损失变 inf 后梯度可能变 NaN，而 CENet 与 actor / critic 共用同一个 Adam，NaN 会直接落进
+    action 的 `std` 参数，下一次采样就触发 CUDA 断言（`normal expects all elements of std >= 0.0`）。
+    现在 `CENet.encode()` 把 log_var 限制在 `[-10, 10]`（可用 `cenet_cfg["log_var_range"]` 调），
+    并且 `DreamwaqPPO.update()` 加了非有限保护：loss 非有限或梯度范数非有限的那条 minibatch 直接跳过，
+    不写进优化器。
+12. **观测必须 clip + 监控病态状态**：少数环境出现"物理爆炸"（例如接触/求解器失控导致
+    `joint_vel` 到 1e3~1e4 rad/s）时，极端观测会被 running 归一化进一步放大，单个 minibatch
+    的 loss 能到 1e10 量级，一次更新就能把策略打死（详见《实验记录.md》"806 轮爆炸复盘"）。
+    现在 `actor_terms` 给 `joint_vel`(±50)、`base_ang_vel`(±30)、`actions`(±20)、
+    `joint_pos`(±3) 加了 `clip`，critic 的 `base_lin_vel` ±10；另外注册了
+    `Episode_Metrics/peak_joint_vel`（`reduce="max"`）用来直接监控最差关节速度。
 
 ---
 
@@ -222,6 +281,10 @@ PPO 原有的 `update_normalization` 照常调用，但我们的覆写要同时�
 | L_est 单独权重 | 1.0 | 与重建项同量级；速度单位是 m/s，量级约 O(1)，可后续再调 |
 | z 的用法 | 策略用 μ；VAE 重建采样 z；推理 μ | 见《论文未明确之处.md》第 2 条 |
 | 策略梯度是否回传 CENet | 回传（不 detach，已定） | 论文未直接说明；本复现选择端到端一起更新 |
+| AdaBoot 的 R 口径 | 每环境最近一次已完成 episode 的 return | 论文只说"episodic reward over m environments" |
+| AdaBoot 掷骰粒度 | 每环境每次 rollout 一次（可切整轮一次） | 论文只说"per learning iteration" |
+| AdaBoot 替换范围 | 只换 v，z 恒用 μ | z 没有真值可换 |
+| AdaBoot 初值 | p_boot = 0（首轮恒用真值） | CV 无数据；符合"早期不 bootstrap" |
 | 学习率调度 | 论文固定 1e-3；mjlab 默认 adaptive | 二选一，建议先跟论文 fixed |
 | done 步的重建项 | mask | 见坑 2 |
 | 观测噪声 | `cenet_input` 与 actor 同分布 | 见坑 10 |
@@ -240,5 +303,6 @@ PPO 原有的 `update_normalization` 照常调用，但我们的覆写要同时�
 
 ## 10. 范围外（按当前要求暂不做）
 
-- AdaBoot：先恒用 v̂（即论文的 "w/o AdaBoot" 版本）。模型里把"这一步用 v̂ 还是用真值 v"做成一个可替换点，将来算出 p_boot 后按环境掩码替换即可，不需要改链路结构。
+- AdaBoot：**已实现**（见 5.4 与《论文未明确之处.md》第 3 条）。`dreamwaq_cfg["adaboot"]`
+  设为 `False` 即退回论文的 "w/o AdaBoot" 版本。
 - 奖励函数、课程学习：保持现状，不动。

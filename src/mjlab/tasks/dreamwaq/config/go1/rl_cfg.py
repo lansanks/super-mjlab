@@ -20,6 +20,17 @@ def unitree_go1_dreamwaq_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
         "init_std": 1.0,
         "std_type": "scalar",
       },
+      cenet_cfg={
+        # Paper Fig. 2: o_t^H = [o_t, ..., o_{t-H}] with H = 5 and z_t in R^16.
+        "obs_group": "cenet_input",
+        "history_length": 6,
+        "latent_dim": 16,
+        "encoder_hidden_dims": (128, 64),
+        "decoder_hidden_dims": (64, 128),
+        "history_order": "oldest_first",
+        # Group holding the simulated ground-truth v_t that AdaBoot falls back to.
+        "velocity_target_group": "cenet_target_v",
+      },
     ),
     critic=RslRlModelCfg(
       hidden_dims=(512, 256, 128),
@@ -42,6 +53,16 @@ def unitree_go1_dreamwaq_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
       lam=0.95,
       desired_kl=0.01,
       max_grad_norm=1.0,
+      # The paper gives neither the KL weight nor the weight of L_CE relative
+      # to the PPO loss; both default to 1.0.
+      # AdaBoot (paper Eq. 8): p_boot = 1 - tanh(CV(R)) decides how often the
+      # policy sees the CENet estimate instead of the ground-truth velocity.
+      dreamwaq_cfg={
+        "beta": 0.0,
+        "ce_coef": 1.0,
+        "adaboot": True,
+        "boot_granularity": "env",
+      },
     ),
     obs_groups={
       "actor": ("actor",),

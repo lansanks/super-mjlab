@@ -20,6 +20,7 @@ from the posterior instead.
 from __future__ import annotations
 
 import copy
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -28,6 +29,23 @@ from rsl_rl.modules import HiddenState
 from tensordict import TensorDict
 
 from mjlab.tasks.dreamwaq.rl.network.cenet import CENet, CENetOutput
+
+BOOT_FLAG_KEY = "cenet_boot_flag"
+"""Observation key holding AdaBoot's per-step mask (1 = use v_hat, 0 = use v_gt).
+
+Written by ``DreamwaqPPO`` during rollouts and replayed from the rollout
+storage during updates, so the policy input is identical in both passes.
+"""
+
+
+def _tensor(obs: TensorDict, key: str) -> torch.Tensor:
+  """Return an observation tensor, rejecting nested observation groups."""
+  value = obs[key]
+  if not isinstance(value, torch.Tensor):
+    raise TypeError(
+      f"Expected observation '{key}' to be a tensor, got {type(value).__name__}."
+    )
+  return value
 
 
 class DreamwaqActorModel(MLPModel):
@@ -104,6 +122,7 @@ class DreamwaqActorModel(MLPModel):
     self._cenet_obs_group = obs_group
     self._cenet_extra_dim = CENet.velocity_dim + latent_dim
     self._last_cenet_output: CENetOutput | None = None
+    self._v_target_group = str(cenet_cfg.pop("velocity_target_group", "cenet_target_v"))
 
     super().__init__(
       obs=obs,
@@ -147,6 +166,7 @@ class DreamwaqActorModel(MLPModel):
       activation=cenet_cfg.pop("activation", activation),
       obs_normalization=bool(cenet_cfg.pop("obs_normalization", True)),
       history_order=cenet_cfg.pop("history_order", "oldest_first"),
+      log_var_range=tuple(cenet_cfg.pop("log_var_range", (-10.0, 10.0))),
     )
     if cenet_cfg:
       raise ValueError(f"Unknown CENet config keys: {sorted(cenet_cfg)}.")
@@ -155,6 +175,30 @@ class DreamwaqActorModel(MLPModel):
   def cenet_group(self) -> str:
     """Observation group holding the flattened CENet history input."""
     return self._cenet_obs_group
+
+  @property
+  def velocity_target_group(self) -> str:
+    """Observation group holding the ground-truth base linear velocity v_t."""
+    return self._v_target_group
+
+  def bind_debug_env(self, env: Any) -> None:
+    """Expose the latest velocity estimate to a play environment.
+
+    The viewer's debug visualizer (the task's velocity command term) reads
+    ``env.cenet_velocity_estimate`` and draws it as an arrow next to the
+    commanded and measured velocities. Only the play path binds an
+    environment, so training never pays this cost.
+    """
+    self._debug_env = env
+    env.cenet_velocity_estimate = torch.zeros(
+      env.num_envs, self.cenet.velocity_dim, device=env.device
+    )
+
+  def _publish_velocity_estimate(self, velocity: torch.Tensor) -> None:
+    """Mirror the estimate onto the bound play environment (debug only)."""
+    env = getattr(self, "_debug_env", None)
+    if env is not None:
+      env.cenet_velocity_estimate.copy_(velocity.detach())
 
   @property
   def last_cenet_output(self) -> CENetOutput:
@@ -194,7 +238,17 @@ class DreamwaqActorModel(MLPModel):
     # input stays deterministic and the PPO ratio has no resampling noise.
     cenet_output = self.cenet(self._cenet_history(obs), sample=False)
     self._last_cenet_output = cenet_output
-    return torch.cat((proprio, cenet_output.velocity, cenet_output.z), dim=-1)
+    velocity = cenet_output.velocity
+    self._publish_velocity_estimate(velocity)
+    # AdaBoot (paper Eq. 8): swap the velocity estimate for the simulated
+    # ground truth wherever the AdaBoot mask says so. The mask is absent unless
+    # AdaBoot is enabled, which also covers inference where no ground truth
+    # exists and the estimate is always used.
+    if BOOT_FLAG_KEY in obs:
+      mask = _tensor(obs, BOOT_FLAG_KEY)
+      ground_truth = _tensor(obs, self._v_target_group)
+      velocity = mask * velocity + (1.0 - mask) * ground_truth
+    return torch.cat((proprio, velocity, cenet_output.z), dim=-1)
 
   def update_normalization(self, obs: TensorDict) -> None:
     """Update the actor and CENet observation normalization statistics."""
@@ -202,7 +256,16 @@ class DreamwaqActorModel(MLPModel):
     self.cenet.update_normalization(self._cenet_history(obs))
 
   def as_onnx(self, verbose: bool) -> nn.Module:
-    """Return the ONNX export wrapper, CENet included."""
+    """Return the ONNX export wrapper, CENet included.
+
+    The wrapper takes the flattened observation history and uses its newest
+    frame as ``o_t``, so the policy must consume a single observation group.
+    """
+    if len(self.obs_groups) != 1:
+      raise ValueError(
+        "ONNX export assumes the policy consumes a single observation group "
+        f"whose newest history frame doubles as o_t, got {self.obs_groups}."
+      )
     return _OnnxDreamwaqActorModel(self, verbose)
 
   def as_jit(self) -> nn.Module:

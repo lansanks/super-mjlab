@@ -36,6 +36,15 @@ class RslRlModelCfg:
   """Number of stacked RNN layers."""
   class_name: str = "MLPModel"
   """Model class name resolved by RSL-RL (MLPModel, CNNModel, or RNNModel)."""
+  cenet_cfg: dict[str, Any] | None = None
+  """DreamWaQ CENet overrides passed to ``DreamwaqActorModel`` (actor only).
+
+  Keys: ``obs_group``, ``history_length``, ``latent_dim``,
+  ``encoder_hidden_dims``, ``decoder_hidden_dims``, ``activation``,
+  ``obs_normalization``, ``history_order``, ``velocity_target_group`` (group
+  holding the ground-truth base linear velocity used by AdaBoot) and
+  ``log_var_range`` (bounds of the posterior log-variance).
+  """
 
 
 @dataclass
@@ -79,6 +88,16 @@ class RslRlPpoAlgorithmCfg:
   """Share CNN encoders between actor and critic."""
   class_name: str = "PPO"
   """Algorithm class name resolved by RSL-RL."""
+  dreamwaq_cfg: dict[str, Any] | None = None
+  """DreamWaQ CENet auxiliary-loss overrides passed to ``DreamwaqPPO``.
+
+  Keys: ``beta`` (KL weight), ``ce_coef`` (weight of the CENet loss relative to
+  the PPO loss), ``obs_target_group``, ``velocity_target_group``, ``adaboot``
+  (adaptive bootstrapping) and ``boot_granularity`` (``"env"``: one draw per
+  environment and rollout, or ``"iteration"``: one draw per rollout).
+  ``recon_terms`` optionally overrides the ordered ``{name: dim}`` layout of the
+  reconstructed observation used by the CENet error metrics.
+  """
 
 
 @dataclass

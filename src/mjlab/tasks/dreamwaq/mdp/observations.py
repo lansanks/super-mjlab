@@ -7,6 +7,8 @@ import torch
 from mjlab.sensor import ContactSensor
 from mjlab.sensor.terrain_height_sensor import TerrainHeightSensor
 
+from .events import push_by_setting_velocity_with_record
+
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
 
@@ -45,3 +47,29 @@ def foot_contact_forces(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tenso
   assert sensor_data.force is not None
   forces_flat = sensor_data.force.flatten(start_dim=1)  # [B, N*3]
   return torch.sign(forces_flat) * torch.log1p(torch.abs(forces_flat))
+
+
+def push_velocity(
+  env: ManagerBasedRlEnv, event_name: str = "push_robot"
+) -> torch.Tensor:
+  """Latest push velocity kick, expressed in the root body frame.
+
+  DreamWaQ's critic observes the disturbance ``d_t`` (paper Eq. 2). mjlab
+  applies pushes as an instantaneous velocity kick, so the quantity recorded by
+  :class:`~mjlab.tasks.dreamwaq.mdp.events.push_by_setting_velocity_with_record`
+  is used as the disturbance proxy. Returns zeros when the push event is not
+  active, e.g. in play mode.
+
+  Returns:
+    Tensor of shape [B, 6] with linear xyz and angular xyz kick components.
+  """
+  term_names = env.event_manager.active_terms.get("interval", [])
+  if event_name not in term_names:
+    return torch.zeros(env.num_envs, 6, device=env.device)
+  event = env.event_manager.get_term_cfg(event_name).func
+  if not isinstance(event, push_by_setting_velocity_with_record):
+    raise TypeError(
+      f"Event '{event_name}' must be a push_by_setting_velocity_with_record "
+      f"to observe the disturbance, got {type(event).__name__}."
+    )
+  return event.push_velocity.clone()

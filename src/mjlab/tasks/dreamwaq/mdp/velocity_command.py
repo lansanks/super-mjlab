@@ -261,6 +261,10 @@ class UniformVelocityCommand(CommandTerm):
     base_mat_ws = matrix_from_quat(base_quat_w).cpu().numpy()
     lin_vel_bs = self.robot.data.root_link_lin_vel_b.cpu().numpy()
     ang_vel_bs = self.robot.data.root_link_ang_vel_b.cpu().numpy()
+    # CENet's body-velocity estimate, published by the play policy
+    # (see DreamwaqActorModel.bind_debug_env); absent outside play.
+    pred_vel_bs = getattr(self._env, "cenet_velocity_estimate", None)
+    pred_vel_nps = pred_vel_bs.cpu().numpy() if pred_vel_bs is not None else None
 
     scale = self.cfg.viz.scale
     z_offset = self.cfg.viz.z_offset
@@ -317,6 +321,22 @@ class UniformVelocityCommand(CommandTerm):
       visualizer.add_arrow(
         act_ang_from, act_ang_to, color=(0.0, 1.0, 0.4, 0.7), width=0.015
       )
+
+      # Predicted linear velocity arrow (magenta).
+      if pred_vel_nps is not None and batch < len(pred_vel_nps):
+        pred_vel_b = pred_vel_nps[batch]
+        pred_from = local_to_world(np.array([0, 0, z_offset]) * scale)
+        pred_to = local_to_world(
+          (np.array([0, 0, z_offset]) + np.array([pred_vel_b[0], pred_vel_b[1], 0]))
+          * scale
+        )
+        visualizer.add_arrow(
+          pred_from,
+          pred_to,
+          color=(1.0, 0.2, 0.8, 0.8),
+          width=0.015,
+          label="CENet v_hat",
+        )
 
 
 @dataclass(kw_only=True)
