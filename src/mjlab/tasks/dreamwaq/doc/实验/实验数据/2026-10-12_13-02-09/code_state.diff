@@ -1,0 +1,1264 @@
+--- git commit ---
+d218defd47b150010732575237a7af022460bd43
+
+
+--- git status ---
+On branch spmj
+Your branch is ahead of 'mj/spmj' by 2 commits.
+  (use "git push" to publish your local commits)
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   docs/source/changelog.rst
+	modified:   src/mjlab/rl/config.py
+	modified:   src/mjlab/rl/exporter_utils.py
+	modified:   src/mjlab/rl/runner.py
+	modified:   src/mjlab/tasks/dreamwaq/config/go1/rl_cfg.py
+	modified:   "src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/CENET.md"
+	modified:   "src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/\350\256\272\346\226\207\346\234\252\346\230\216\347\241\256\344\271\213\345\244\204.md"
+	modified:   src/mjlab/tasks/dreamwaq/dreamwaq_env_cfg.py
+	modified:   src/mjlab/tasks/dreamwaq/mdp/__init__.py
+	modified:   src/mjlab/tasks/dreamwaq/mdp/observations.py
+	modified:   src/mjlab/tasks/dreamwaq/mdp/velocity_command.py
+	modified:   src/mjlab/tasks/dreamwaq/rl/algorithm/dreamwaq_ppo.py
+	modified:   src/mjlab/tasks/dreamwaq/rl/network/actor.py
+	modified:   src/mjlab/tasks/dreamwaq/rl/network/cenet.py
+	modified:   src/mjlab/tasks/dreamwaq/rl/runner.py
+	modified:   src/mjlab/tasks/velocity/config/go1/env_cfgs.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	"src/mjlab/tasks/dreamwaq/doc/\345\256\236\351\252\214\346\225\260\346\215\256/"
+	"src/mjlab/tasks/dreamwaq/doc/\345\256\236\351\252\214\350\256\260\345\275\225.md"
+	src/mjlab/tasks/dreamwaq/mdp/events.py
+	src/mjlab/tasks/dreamwaq/mdp/metrics.py
+	src/mjlab/tasks/dreamwaq/rl/metrics.py
+	tests/test_dreamwaq_adaboot.py
+	tests/test_dreamwaq_cenet.py
+	tests/test_dreamwaq_env_cfg.py
+	tests/test_dreamwaq_metrics.py
+	tests/test_dreamwaq_visualization.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/docs/source/changelog.rst b/docs/source/changelog.rst
+index 6f79c4be0..6d0a60acc 100644
+--- a/docs/source/changelog.rst
++++ b/docs/source/changelog.rst
+@@ -10,9 +10,40 @@ Added
+ 
+ - Added the ``Mjlab-DreamWaQ-Rough-Unitree-Go1`` task, a reproduction of
+   DreamWaQ (implicit terrain imagination via a context-aided estimator). It
+-  pairs a 5-frame proprioceptive history with a CENet-based actor model and a
++  pairs a six-frame proprioceptive history with a CENet-based actor model and a
+   PPO variant that learns the estimator and the policy jointly.
+ 
++- Added optional ``cenet_cfg`` and ``dreamwaq_cfg`` fields to ``RslRlModelCfg``
++  and ``RslRlPpoAlgorithmCfg`` so the DreamWaQ CENet and the weights of its
++  auxiliary losses can be tuned from the RL configuration.
++
++- Added AdaBoot (adaptive bootstrapping) to the DreamWaQ task: once per rollout
++  each environment replaces the CENet velocity estimate with the simulated
++  ground truth with probability ``1 - p_boot``, where
++  ``p_boot = 1 - tanh(CV(R))`` is recomputed from the returns of the most
++  recently completed episodes. The mask is stored in the rollout storage so the
++  update reproduces the rollout's policy input exactly, and the AdaBoot state is
++  saved in and restored from checkpoints. The CENet auxiliary losses (plus their
++  weighted total) are printed with the PPO losses, and the body-frame velocity
++  estimation error, the per-term reconstruction errors (both as percentages of
++  each signal's own fluctuation) and the AdaBoot probability are logged under
++  ``Metrics/``.
++
++- Added a predicted-velocity debug arrow to the DreamWaQ play viewer: the
++  CENet's body-velocity estimate is published by the play policy and drawn in
++  magenta (``CENet v_hat``) next to the commanded and measured velocity arrows.
++
++- Added latent diagnostics to the DreamWaQ metrics: ``Metrics/latent_drift``
++  (per-step change of the posterior mean) and ``Metrics/latent_spread``
++  (between-environment differences) show whether the context vector behaves
++  like a slow context or a fast memory when tuning the KL weight.
++
++- Clipped DreamWaQ's unbounded proprioceptive observations (``joint_vel``,
++  ``base_ang_vel``, ``actions``, ``joint_pos`` and the critic's
++  ``base_lin_vel``) so a rare violent simulation state cannot blow up a PPO
++  mini-batch through an extreme sample, and added an ``Episode_Metrics/peak_joint_vel``
++  metric to watch for such states.
++
+ - Added ``SimulationCfg.graph_conditional`` to toggle MuJoCo Warp's CUDA graph
+   conditional nodes, which require CUDA 12.4 or newer.
+ 
+@@ -22,6 +53,10 @@ Added
+ Changed
+ ^^^^^^^
+ 
++- ``get_base_metadata`` accepts an optional ``obs_group`` argument (defaults to
++  ``"actor"``) so tasks whose policy input is an observation history can
++  describe the group the exported model actually consumes.
++
+ - Bumped ``rsl-rl-lib`` from 5.5.0 to 5.5.1. This removes the need for capping
+   ``wandb`` below 0.29.
+ 
+@@ -32,6 +67,17 @@ Changed
+ Fixed
+ ^^^^^
+ 
++- DreamWaQ training no longer crashes with a CUDA ``device-side assert`` when
++  the CENet posterior diverges: the log-variance is clamped to ``[-10, 10]``
++  before it reaches the KL term, and PPO mini-batches with a non-finite loss or
++  gradient norm are skipped instead of poisoning the parameters.
++
++- DreamWaQ's exported ONNX metadata now describes the CENet observation history
++  (six frames of proprioception) instead of the 45-dim actor observation, and
++  the DreamWaQ ONNX export fails loudly when the policy consumes more than one
++  observation group. The critic also observes the simulator's ground-truth base
++  linear velocity and the velocity kick applied by the most recent push.
++
+ - Capped ``wandb`` below 0.29, which removed the ``start_method`` setting still passed
+   by ``rsl-rl-lib`` and crashed training runs launched with ``--logger wandb``.
+ - ``distribution="gaussian"`` domain randomization now draws an independent value per
+diff --git a/src/mjlab/rl/config.py b/src/mjlab/rl/config.py
+index 8ce233dd2..f34c8e301 100644
+--- a/src/mjlab/rl/config.py
++++ b/src/mjlab/rl/config.py
+@@ -36,6 +36,15 @@ class RslRlModelCfg:
+   """Number of stacked RNN layers."""
+   class_name: str = "MLPModel"
+   """Model class name resolved by RSL-RL (MLPModel, CNNModel, or RNNModel)."""
++  cenet_cfg: dict[str, Any] | None = None
++  """DreamWaQ CENet overrides passed to ``DreamwaqActorModel`` (actor only).
++
++  Keys: ``obs_group``, ``history_length``, ``latent_dim``,
++  ``encoder_hidden_dims``, ``decoder_hidden_dims``, ``activation``,
++  ``obs_normalization``, ``history_order``, ``velocity_target_group`` (group
++  holding the ground-truth base linear velocity used by AdaBoot) and
++  ``log_var_range`` (bounds of the posterior log-variance).
++  """
+ 
+ 
+ @dataclass
+@@ -79,6 +88,16 @@ class RslRlPpoAlgorithmCfg:
+   """Share CNN encoders between actor and critic."""
+   class_name: str = "PPO"
+   """Algorithm class name resolved by RSL-RL."""
++  dreamwaq_cfg: dict[str, Any] | None = None
++  """DreamWaQ CENet auxiliary-loss overrides passed to ``DreamwaqPPO``.
++
++  Keys: ``beta`` (KL weight), ``ce_coef`` (weight of the CENet loss relative to
++  the PPO loss), ``obs_target_group``, ``velocity_target_group``, ``adaboot``
++  (adaptive bootstrapping) and ``boot_granularity`` (``"env"``: one draw per
++  environment and rollout, or ``"iteration"``: one draw per rollout).
++  ``recon_terms`` optionally overrides the ordered ``{name: dim}`` layout of the
++  reconstructed observation used by the CENet error metrics.
++  """
+ 
+ 
+ @dataclass
+diff --git a/src/mjlab/rl/exporter_utils.py b/src/mjlab/rl/exporter_utils.py
+index 7ee4aaded..b0e0b4399 100644
+--- a/src/mjlab/rl/exporter_utils.py
++++ b/src/mjlab/rl/exporter_utils.py
+@@ -32,13 +32,17 @@ def list_to_csv_str(
+ 
+ 
+ def get_base_metadata(
+-  env: ManagerBasedRlEnv, run_path: str
++  env: ManagerBasedRlEnv, run_path: str, obs_group: str = "actor"
+ ) -> dict[str, list | str | float]:
+   """Get base metadata common to all RL policy exports.
+ 
+   Args:
+     env: The RL environment.
+     run_path: W&B run path or other identifier.
++    obs_group: Observation group consumed by the exported policy. Defaults to
++      ``"actor"``. Policies that consume an observation history (e.g. DreamWaQ's
++      CENet input) pass the group holding that history so the metadata describes
++      the actual network input.
+ 
+   Returns:
+     Dictionary of metadata fields that are common across all tasks.
+@@ -64,10 +68,10 @@ def get_base_metadata(
+   observation_term_flatten_history_dim: list = []
+   observation_term_history_length: list = []
+   observation_term_clip: list = []
+-  observation_names = env.observation_manager.active_terms["actor"]
++  observation_names = env.observation_manager.active_terms[obs_group]
+ 
+   for active_term in observation_names:
+-    cfg = env.observation_manager.get_term_cfg("actor", active_term)
++    cfg = env.observation_manager.get_term_cfg(obs_group, active_term)
+ 
+     if cfg.scale is None:
+       observation_term_scale.append(1.0)
+diff --git a/src/mjlab/rl/runner.py b/src/mjlab/rl/runner.py
+index 29349290a..f376cfae5 100644
+--- a/src/mjlab/rl/runner.py
++++ b/src/mjlab/rl/runner.py
+@@ -23,12 +23,15 @@ class MjlabOnPolicyRunner(OnPolicyRunner):
+     # Strip None-valued optional configs so MLPModel doesn't receive them.
+     for key in ("actor", "critic"):
+       if key in train_cfg:
+-        for opt in ("cnn_cfg", "distribution_cfg"):
++        for opt in ("cnn_cfg", "distribution_cfg", "cenet_cfg"):
+           if train_cfg[key].get(opt) is None:
+             train_cfg[key].pop(opt, None)
+         if train_cfg[key].get("rnn_type") is None:
+           for opt in ("rnn_type", "rnn_hidden_dim", "rnn_num_layers"):
+             train_cfg[key].pop(opt, None)
++    # DreamWaQ-specific algorithm overrides must not reach plain PPO.
++    if train_cfg.get("algorithm", {}).get("dreamwaq_cfg") is None:
++      train_cfg.get("algorithm", {}).pop("dreamwaq_cfg", None)
+     super().__init__(env, train_cfg, log_dir, device)
+ 
+   def export_policy_to_onnx(
+diff --git a/src/mjlab/tasks/dreamwaq/config/go1/rl_cfg.py b/src/mjlab/tasks/dreamwaq/config/go1/rl_cfg.py
+index 2b6eff843..25b2624fc 100644
+--- a/src/mjlab/tasks/dreamwaq/config/go1/rl_cfg.py
++++ b/src/mjlab/tasks/dreamwaq/config/go1/rl_cfg.py
+@@ -20,6 +20,17 @@ def unitree_go1_dreamwaq_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
+         "init_std": 1.0,
+         "std_type": "scalar",
+       },
++      cenet_cfg={
++        # Paper Fig. 2: o_t^H = [o_t, ..., o_{t-H}] with H = 5 and z_t in R^16.
++        "obs_group": "cenet_input",
++        "history_length": 6,
++        "latent_dim": 16,
++        "encoder_hidden_dims": (128, 64),
++        "decoder_hidden_dims": (64, 128),
++        "history_order": "oldest_first",
++        # Group holding the simulated ground-truth v_t that AdaBoot falls back to.
++        "velocity_target_group": "cenet_target_v",
++      },
+     ),
+     critic=RslRlModelCfg(
+       hidden_dims=(512, 256, 128),
+@@ -42,6 +53,16 @@ def unitree_go1_dreamwaq_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
+       lam=0.95,
+       desired_kl=0.01,
+       max_grad_norm=1.0,
++      # The paper gives neither the KL weight nor the weight of L_CE relative
++      # to the PPO loss; both default to 1.0.
++      # AdaBoot (paper Eq. 8): p_boot = 1 - tanh(CV(R)) decides how often the
++      # policy sees the CENet estimate instead of the ground-truth velocity.
++      dreamwaq_cfg={
++        "beta": 0.0,
++        "ce_coef": 1.0,
++        "adaboot": True,
++        "boot_granularity": "env",
++      },
+     ),
+     obs_groups={
+       "actor": ("actor",),
+diff --git "a/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/CENET.md" "b/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/CENET.md"
+index 6375c0d26..811460a0c 100644
+--- "a/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/CENET.md"
++++ "b/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/CENET.md"
+@@ -3,6 +3,7 @@
+ > 本文只描述"怎么改"，不含任何代码改动。
+ > 依据只有两处：论文 `src/mjlab/tasks/dreamwaq/doc/dreamwaq.pdf` 和当前仓库代码。
+ > 当前仓库的 actor 观测组（45 维）和 critic 观测组（特权观测）保持现状，不要求与论文完全一致。
++> 各轮训练的实验数据、曲线读数与阶段性结论见 `../实验记录.md`。
+ 
+ ---
+ 
+@@ -164,6 +165,9 @@ total  = L_PPO + λ · L_CE
+ - `L_PPO` = surrogate + value_loss_coef · value_loss − entropy_coef · entropy（rsl_rl 现有逻辑不变）；
+ - 一次 `backward()`，一次 optimizer step。CENet 参数在 actor 内，`chain(actor.parameters(), critic.parameters())` 自动包含，梯度裁剪、保存、加载都不用改；
+ - `loss_dict` 里追加 `cenet_est`、`cenet_recon`、`cenet_kl`，runner 会自动记进 wandb。
++  另有加权总量 `cenet_total = ce_coef · (L_est + L_rec + β·L_kl)`，便于判断辅助损失
++  相对 PPO 损失的量级；rsl_rl 的 logger 会把 `loss_dict` 每一项打印成 `Mean xxx loss`
++  并写入 wandb 的 `Loss/` 组。
+ 
+ **第三步：更新归一化统计**
+ 
+@@ -177,6 +181,45 @@ PPO 原有的 `update_normalization` 照常调用，但我们的覆写要同时
+ - 重建目标 `o_{t+1}` 用同一套 normalizer 变换后再算 MSE；
+ - actor 自己的 o_t 输入照旧走 `obs_normalization=True`。
+ 
++### 5.4 AdaBoot（已实现）
++
++论文 Eq. 8：`p_boot = 1 − tanh(CV(R))`，R 是各环境 episodic reward 向量，每个 learning
++iteration 算一次；p_boot 是"actor 用 CENet 估计值 v̂"的概率，剩下的概率用真值 v_t。
++
++```text
++rollout：p_boot 来自上一轮 → 每个环境掷一次骰子 → mask (T,N,1)
++         obs["cenet_boot_flag"] = mask
++         actor 输入:  v = mask · v̂  +  (1 − mask) · v_t（cenet_target_v）
++         mask 写入 buffer，rollout 结束后注入 RolloutStorage
++update ：minibatch 里带同一份 mask → 重算 log-prob 时输入与 rollout 完全一致
++compute_returns 末尾：用本轮结算的 episode return 更新 p_boot（下一轮生效）
++```
++
++- 只替换 3 维速度槽，z 恒用 μ；`L_est` / 重建 / critic（含 d_t）都不受影响；
++- mask 必须落盘复用，否则 rollout 与 update 的 actor 输入不一致、PPO ratio 被污染；
++- ONNX 与 play 没有 `cenet_boot_flag`，恒用 v̂（部署时没有真值）；
++- 首轮 p_boot = 0；p_boot 与 episode-return 统计写进 checkpoint（`adaboot_state_dict`）。
++- 日志（走 `extras["log"]` → wandb `Metrics/` 组 + 控制台 episode extras 区）：
++  - `Metrics/velocity_est_error`：每步 `‖v̂ − v_t‖` 的均值，单位 m/s；
++  - `Metrics/est_vel_mean_pct`：速度估计误差的百分比形式，定义为
++    `100 · RMS_d(Δv_d / σ_d)`，σ_d 是 v_t 每轴的 running 标准差（`CenetMetrics` 自己维护
++    一套 `EmpiricalNormalization(3)`）。100% 表示"误差和该轴自身的波动幅度一样大"；
++  - `Metrics/recon_<term>_mean_pct`：重建误差按观测 term 拆开（base_ang_vel /
++    projected_gravity / joint_pos / joint_vel / actions / command），用同一套百分比定义，
++    解码器输入取后验均值 μ（确定性、无采样噪声，与训练损失用的采样 z 不同）；
++    term 切分默认按 Go1 DreamWaQ 的 45 维布局，可用 `dreamwaq_cfg["recon_terms"]` 覆盖，
++    与观测维度不符会直接报错；
++  - `Metrics/adaboot_pboot`（本轮生效的 p_boot）、`Metrics/adaboot_fraction`（本轮实际用
++    v̂ 的样本比例）。
++  - `Metrics/latent_drift`（`mean_env ‖μ_t − μ_{t−1}‖`，episode 重置步跳过）与
++    `Metrics/latent_spread`（`mean_env ‖μ_i − mean_robots μ‖`）：判断 z 是"慢变 context"
++    还是"快速记忆"——context 应该 drift 小、spread 大，`drift/spread` 是选 β 时的判据之一。
++  - 这些量必须在算法侧算（需要 CENet 前向和 running 统计），因此不能写成
++    `MetricsTermCfg`（那套 term 只能拿到 `env`）；实现放在 `rl/metrics.py`。
++
++细节与"论文没写清、由复现拍板"的三点（R 口径、骰子粒度、替换范围）见
++《论文未明确之处.md》第 3 条。
++
+ ---
+ 
+ ## 6. 配置与注册（当前链路缺的一环）
+@@ -196,6 +239,10 @@ PPO 原有的 `update_normalization` 照常调用，但我们的覆写要同时
+ - `rl/runner.py`：ONNX metadata 目前按 actor 组生成，DreamWaQ 下应改成按 `cenet_input` 组生成（history_length=6），部署端才知道要喂 6 帧；
+ - play 模式：现在 play 时会关掉 actor 组的噪声，`cenet_input` 组也要同步关掉。
+ 
++> 2026-10 更新：以上配套均已落地 —— `RslRlModelCfg.cenet_cfg` /
++> `RslRlPpoAlgorithmCfg.dreamwaq_cfg` 已加入公共配置，ONNX metadata 已按
++> `cenet_input` 组生成，play 模式同步关闭 `cenet_input` 噪声。
++
+ ---
+ 
+ ## 7. 容易踩的坑（重点看这一节）
+@@ -210,6 +257,18 @@ PPO 原有的 `update_normalization` 照常调用，但我们的覆写要同时
+ 8. **旧 checkpoint 不兼容**：actor 的 state_dict 会多出 `cenet.*` 的键，旧模型无法 strict 加载，需要从头训。
+ 9. **显存/内存**：每步多存 270 + 45 + 3 维，4096 envs × 24 steps 大约 100 MB 量级/轮，可接受。
+ 10. **噪声一致性（可选）**：`cenet_input` 和 `actor` 是两个组，各自独立采样噪声，数值上不会完全相同（分布相同）。论文里没有这个要求，先接受；将来若要严格一致，再考虑让两者共享同一份噪声实例。
++11. **后验参数必须 clamp**：KL 项里有 `exp(log_var)`，log_var 一旦漂到大数（>~88）就溢出成 inf，
++    损失变 inf 后梯度可能变 NaN，而 CENet 与 actor / critic 共用同一个 Adam，NaN 会直接落进
++    action 的 `std` 参数，下一次采样就触发 CUDA 断言（`normal expects all elements of std >= 0.0`）。
++    现在 `CENet.encode()` 把 log_var 限制在 `[-10, 10]`（可用 `cenet_cfg["log_var_range"]` 调），
++    并且 `DreamwaqPPO.update()` 加了非有限保护：loss 非有限或梯度范数非有限的那条 minibatch 直接跳过，
++    不写进优化器。
++12. **观测必须 clip + 监控病态状态**：少数环境出现"物理爆炸"（例如接触/求解器失控导致
++    `joint_vel` 到 1e3~1e4 rad/s）时，极端观测会被 running 归一化进一步放大，单个 minibatch
++    的 loss 能到 1e10 量级，一次更新就能把策略打死（详见《实验记录.md》"806 轮爆炸复盘"）。
++    现在 `actor_terms` 给 `joint_vel`(±50)、`base_ang_vel`(±30)、`actions`(±20)、
++    `joint_pos`(±3) 加了 `clip`，critic 的 `base_lin_vel` ±10；另外注册了
++    `Episode_Metrics/peak_joint_vel`（`reduce="max"`）用来直接监控最差关节速度。
+ 
+ ---
+ 
+@@ -222,6 +281,10 @@ PPO 原有的 `update_normalization` 照常调用，但我们的覆写要同时
+ | L_est 单独权重 | 1.0 | 与重建项同量级；速度单位是 m/s，量级约 O(1)，可后续再调 |
+ | z 的用法 | 策略用 μ；VAE 重建采样 z；推理 μ | 见《论文未明确之处.md》第 2 条 |
+ | 策略梯度是否回传 CENet | 回传（不 detach，已定） | 论文未直接说明；本复现选择端到端一起更新 |
++| AdaBoot 的 R 口径 | 每环境最近一次已完成 episode 的 return | 论文只说"episodic reward over m environments" |
++| AdaBoot 掷骰粒度 | 每环境每次 rollout 一次（可切整轮一次） | 论文只说"per learning iteration" |
++| AdaBoot 替换范围 | 只换 v，z 恒用 μ | z 没有真值可换 |
++| AdaBoot 初值 | p_boot = 0（首轮恒用真值） | CV 无数据；符合"早期不 bootstrap" |
+ | 学习率调度 | 论文固定 1e-3；mjlab 默认 adaptive | 二选一，建议先跟论文 fixed |
+ | done 步的重建项 | mask | 见坑 2 |
+ | 观测噪声 | `cenet_input` 与 actor 同分布 | 见坑 10 |
+@@ -240,5 +303,6 @@ PPO 原有的 `update_normalization` 照常调用，但我们的覆写要同时
+ 
+ ## 10. 范围外（按当前要求暂不做）
+ 
+-- AdaBoot：先恒用 v̂（即论文的 "w/o AdaBoot" 版本）。模型里把"这一步用 v̂ 还是用真值 v"做成一个可替换点，将来算出 p_boot 后按环境掩码替换即可，不需要改链路结构。
++- AdaBoot：**已实现**（见 5.4 与《论文未明确之处.md》第 3 条）。`dreamwaq_cfg["adaboot"]`
++  设为 `False` 即退回论文的 "w/o AdaBoot" 版本。
+ - 奖励函数、课程学习：保持现状，不动。
+diff --git "a/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/\350\256\272\346\226\207\346\234\252\346\230\216\347\241\256\344\271\213\345\244\204.md" "b/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/\350\256\272\346\226\207\346\234\252\346\230\216\347\241\256\344\271\213\345\244\204.md"
+index edfd5d1d5..716456bc9 100644
+--- "a/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/\350\256\272\346\226\207\346\234\252\346\230\216\347\241\256\344\271\213\345\244\204.md"
++++ "b/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/\350\256\272\346\226\207\346\234\252\346\230\216\347\241\256\344\271\213\345\244\204.md"
+@@ -34,13 +34,60 @@ update 重算时重新采样的 z 不是同一个，ratio 里会混进与策略
+ > 如果以后要改成"策略也吃采样 z"：rollout 时记录 ε = (z − μ) / σ，`compute_returns`
+ > 里注入 `cenet_eps`，actor 的 `get_latent` 在 obs 含该 key 时改用 `z = μ + σ·ε`。
+ 
+-## 3. 其他已知留白（备忘，暂按默认值实现）
++## 3. AdaBoot 的实现口径
+ 
+-- **β 与 L_CE 的权重**：论文没给 β（KL 权重）和"`L_CE` 相对 PPO 损失"的权重。
+-  代码默认 `beta = 1.0`、`ce_coef = 1.0`（`DreamwaqPPO` 的 `dreamwaq_cfg`）。
++**论文的说法**：`p_boot = 1 − tanh(CV(R))`（Eq. 8），`CV(R) = std(R) / mean(R)`，
++R 是"m 个域随机化环境"的 episodic reward 向量，**每个 learning iteration** 算一次。
++早期 CV 大 → p_boot 小 → 不用估计值（用真值 v_t 稳住训练）；学好后 CV 小 → p_boot 大
++→ 用 v̂（bootstrap），练出对估计误差的鲁棒性。论文没说：R 具体取哪一段回报、掷骰子的
++粒度、以及"自举"到底替换哪些量。
++
++**我们的选择**（对应 `DreamwaqPPO` 的 `dreamwaq_cfg={"adaboot": True,
++"boot_granularity": "env"}`）：
++
++1. **R 的口径**：每个环境"最近一次已完成 episode 的 undiscounted return"滚动向量，
++   m = 至少完成过一次 episode 的环境数。有效样本 < 2（CV 无定义）或 mean ≤ 0
++   （视为还没学好）时 p_boot = 0。std 用 `torch.std` 默认的样本标准差，分母取 |mean|
++   并 clamp 兜底，最后把 p_boot 截断到 [0, 1]。
++2. **掷骰粒度**：`boot_granularity="env"`——每个环境每次 rollout 独立掷一次，
++   环境内 24 步保持一致，环境之间混合；一个 minibatch 里用 v̂ 的样本比例 ≈ p_boot。
++   可选 `"iteration"`（整轮一次骰子、全部环境一致），更贴论文"per learning iteration"
++   的字面措辞。
++3. **替换范围**：只替换 actor 输入里的 3 维速度槽
++   `v = flag · v̂ + (1 − flag) · v_t`；z 恒用 μ（没有真值可换）。`L_est`、重建目标、
++   critic 观测（含 d_t）都不受影响。
++4. **时间线**：首轮 p_boot = 0；每轮 rollout 结束后用本轮结算的 episode return 更新
++   p_boot，作用于**下一轮** rollout（因果上无法提前知道本轮回报）。
++5. **mask 必须落盘**：每步的 flag 写进 rollout storage（key `cenet_boot_flag`），
++   update 重算 log-prob 时原样复用。否则 rollout 与 update 的 actor 输入不一致，
++   PPO 的重要性比会被污染。这是论文没提、但实现上必须做的一步。
++   （如果将来开启 rsl_rl 的 symmetry 数据增强，它的 `data_augmentation_func`
++   需要一起搬运这个 key。）
++6. **部署/推理**：ONNX 与 play 没有 `cenet_boot_flag`，恒用 v̂（部署时本来也没有真值）。
++7. **状态持久化**：p_boot、每环境 episode 累计回报、最近一次回报、是否已有回报标记
++   写进 checkpoint（`adaboot_state_dict`）；加载旧 checkpoint 时打印警告并从 p_boot = 0 重来。
++
++**原因**：粒度取 per-env-per-rollout 是中道选择——环境内输入来源不跳变（避免 50 Hz 抖动），
++环境间混合让每轮都有策略梯度回传到编码器；只换 v 是因为 z 没有真值可换；mask 落盘是
++PPO ratio 正确性的硬性要求。
++
++## 4. 其他已知留白（备忘，暂按默认值实现）
++
++- **β（KL 权重）**：论文没给。已按"不坍缩 / 同迭代下 recon 代价可接受 / 策略指标不劣"
++  三条判据扫描（数据与曲线见 `../实验记录.md` Run 3–6、§1.3 与 `../实验数据/figures/`）：
++  β=1 与 β=0.2 都坍缩（KL≈1e-3 / 5.5e-3，recon 0.67~0.81 / 0.53）；β=0 是无正则上界
++  （KL≈90、recon 0.23）；β=0.05 在已测档位里最优（KL≈4、recon≈0.37），但按
++  "收敛值 vs 收敛值"口径它对 β=0 的重建仍差 1.57×（command / joint_pos / gravity
++  这些慢变量通道差 1.9~3.3×），且 0.001~0.03 档未测过 ——
++  **当前暂定 β=0.05，最终值待补测 β∈{0.01, 0.02} 后决定**。
++- **L_CE 相对 PPO 损失的权重**：论文没给，固定 `ce_coef = 1.0`
++  （`Loss/cenet_total` 已在日志里，可直接看它与 surrogate/value 的量级关系）。
+ - **观测归一化的实现方式**：论文只说"所有观测归一化到零均值、单位方差"，没说用什么统计方式。
+   我们用的是 running 统计量的 `EmpiricalNormalization`：actor 观测一份、CENet 历史按 45 维一份。
+-- **AdaBoot 的骰子粒度**：p_boot 是"整批环境一起掷"还是"每个环境单独掷"，论文写得模糊。
+-  本阶段先不实现 AdaBoot（恒用 v̂），只留替换点。
+ - **论文 Fig.2 的 48 维**：与 Eq.(1) 的 45 维矛盾，按笔误处理；重建目标用 45 维
+   （与本地 actor 观测一致）。
++- **观测 clip**：论文没提（仿真与真机的数值安全是工程细节）。我们对可能"物理爆炸"的
++  观测项加了硬上限：`joint_vel` ±50、`base_ang_vel` ±30、`actions` ±20、`joint_pos` ±3、
++  critic 的 `base_lin_vel` ±10。目的是把"少数环境仿真失控"的伤害隔离在少量样本内
++  （否则单个极端样本能一次更新打死策略，见《实验记录.md》806 轮复盘）。
++  部署端要用同一套 clip —— ONNX metadata 里 `observation_terms_clip` 已记录这些范围。
+diff --git a/src/mjlab/tasks/dreamwaq/dreamwaq_env_cfg.py b/src/mjlab/tasks/dreamwaq/dreamwaq_env_cfg.py
+index e2b8d5c23..b607352ea 100644
+--- a/src/mjlab/tasks/dreamwaq/dreamwaq_env_cfg.py
++++ b/src/mjlab/tasks/dreamwaq/dreamwaq_env_cfg.py
+@@ -82,10 +82,14 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
+     #   params={"sensor_name": "robot/imu_lin_vel"},
+     #   noise=Unoise(n_min=-0.5, n_max=0.5),
+     # ),
++    # The clips bound the damage of a rare violent simulation state: a single
++    # environment with, e.g., an exploding joint velocity can otherwise inject
++    # a huge sample into a PPO mini-batch and destroy the policy in one step.
+     "base_ang_vel": ObservationTermCfg(
+       func=mdp.builtin_sensor,
+       params={"sensor_name": "robot/imu_ang_vel"},
+       noise=Unoise(n_min=-0.2, n_max=0.2),
++      clip=(-30.0, 30.0),
+     ),
+     "projected_gravity": ObservationTermCfg(
+       func=mdp.projected_gravity,
+@@ -95,12 +99,14 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
+       func=mdp.joint_pos_rel,
+       params={"biased": True},
+       noise=Unoise(n_min=-0.01, n_max=0.01),
++      clip=(-3.0, 3.0),
+     ),
+     "joint_vel": ObservationTermCfg(
+       func=mdp.joint_vel_rel,
+       noise=Unoise(n_min=-1.5, n_max=1.5),
++      clip=(-50.0, 50.0),
+     ),
+-    "actions": ObservationTermCfg(func=mdp.last_action),
++    "actions": ObservationTermCfg(func=mdp.last_action, clip=(-20.0, 20.0)),
+     "command": ObservationTermCfg(
+       func=mdp.generated_commands,
+       params={"command_name": "twist"},
+@@ -115,6 +121,17 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
+ 
+   critic_terms = {
+     **actor_terms,
++    # Privileged ground-truth base linear velocity v_t (paper Eq. 2). The actor
++    # observation deliberately excludes it, so it must be added back here.
++    "base_lin_vel": ObservationTermCfg(
++      func=envs_mdp.base_lin_vel,
++      params={"asset_cfg": SceneEntityCfg("robot")},
++      clip=(-10.0, 10.0),
++    ),
++    # Privileged disturbance d_t (paper Eq. 2): the velocity kick applied by
++    # the most recent push, in the root body frame. Zero until the first push
++    # of an episode and while the push event is disabled (play mode).
++    "push_velocity": ObservationTermCfg(func=mdp.push_velocity),
+     # Critic sees the true (unbiased) joint positions as privileged information.
+     "joint_pos": ObservationTermCfg(func=mdp.joint_pos_rel),
+     "height_scan": ObservationTermCfg(
+@@ -152,16 +169,16 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
+       enable_corruption=False,
+     ),
+     "cenet_input": ObservationGroupCfg(
+-      terms=actor_terms,         
++      terms=actor_terms,
+       concatenate_terms=True,
+-      enable_corruption=True,    
++      enable_corruption=True,
+       history_length=6,
+-      flatten_history_dim=False,  
++      flatten_history_dim=False,
+     ),
+     "cenet_target_o": ObservationGroupCfg(
+-      terms=actor_terms,           # 同一套 term，但干净、不带 history
++      terms=actor_terms,  # 同一套 term，但干净、不带 history
+       concatenate_terms=True,
+-      enable_corruption=False,     # → (N, 45)，训练时错一格当 o_{t+1}
++      enable_corruption=False,  # → (N, 45)，训练时错一格当 o_{t+1}
+     ),
+     "cenet_target_v": ObservationGroupCfg(
+       terms={
+@@ -171,7 +188,7 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
+         ),
+       },
+       concatenate_terms=True,
+-      enable_corruption=False,     # → (N, 3)，仿真真值 v_t
++      enable_corruption=False,  # → (N, 3)，仿真真值 v_t
+     ),
+   }
+ 
+@@ -183,6 +200,9 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
+     "mean_action_acc": MetricsTermCfg(
+       func=mdp.mean_action_acc,
+     ),
++    # Worst joint velocity of the episode: catches violent simulation states
++    # before they can blow up training through an extreme observation sample.
++    "peak_joint_vel": MetricsTermCfg(func=mdp.peak_joint_vel, reduce="max"),
+   }
+ 
+   ##
+@@ -249,7 +269,7 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
+       },
+     ),
+     "push_robot": EventTermCfg(
+-      func=mdp.push_by_setting_velocity,
++      func=mdp.push_by_setting_velocity_with_record,
+       mode="interval",
+       interval_range_s=(1.0, 3.0),
+       params={
+@@ -261,6 +281,7 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
+           "pitch": (-0.52, 0.52),
+           "yaw": (-0.78, 0.78),
+         },
++        "asset_cfg": SceneEntityCfg("robot"),
+       },
+     ),
+     "foot_friction": EventTermCfg(
+diff --git a/src/mjlab/tasks/dreamwaq/mdp/__init__.py b/src/mjlab/tasks/dreamwaq/mdp/__init__.py
+index 1d3be5283..c220b39ab 100644
+--- a/src/mjlab/tasks/dreamwaq/mdp/__init__.py
++++ b/src/mjlab/tasks/dreamwaq/mdp/__init__.py
+@@ -1,6 +1,8 @@
+ from mjlab.envs.mdp import *  # noqa: F401, F403
+ 
+ from .curriculums import *  # noqa: F403
++from .events import *  # noqa: F403
++from .metrics import *  # noqa: F403
+ from .observations import *  # noqa: F403
+ from .rewards import *  # noqa: F403
+ from .terminations import *  # noqa: F403
+diff --git a/src/mjlab/tasks/dreamwaq/mdp/observations.py b/src/mjlab/tasks/dreamwaq/mdp/observations.py
+index 6275d4393..fd89dc70c 100644
+--- a/src/mjlab/tasks/dreamwaq/mdp/observations.py
++++ b/src/mjlab/tasks/dreamwaq/mdp/observations.py
+@@ -7,6 +7,8 @@ import torch
+ from mjlab.sensor import ContactSensor
+ from mjlab.sensor.terrain_height_sensor import TerrainHeightSensor
+ 
++from .events import push_by_setting_velocity_with_record
++
+ if TYPE_CHECKING:
+   from mjlab.envs import ManagerBasedRlEnv
+ 
+@@ -45,3 +47,29 @@ def foot_contact_forces(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tenso
+   assert sensor_data.force is not None
+   forces_flat = sensor_data.force.flatten(start_dim=1)  # [B, N*3]
+   return torch.sign(forces_flat) * torch.log1p(torch.abs(forces_flat))
++
++
++def push_velocity(
++  env: ManagerBasedRlEnv, event_name: str = "push_robot"
++) -> torch.Tensor:
++  """Latest push velocity kick, expressed in the root body frame.
++
++  DreamWaQ's critic observes the disturbance ``d_t`` (paper Eq. 2). mjlab
++  applies pushes as an instantaneous velocity kick, so the quantity recorded by
++  :class:`~mjlab.tasks.dreamwaq.mdp.events.push_by_setting_velocity_with_record`
++  is used as the disturbance proxy. Returns zeros when the push event is not
++  active, e.g. in play mode.
++
++  Returns:
++    Tensor of shape [B, 6] with linear xyz and angular xyz kick components.
++  """
++  term_names = env.event_manager.active_terms.get("interval", [])
++  if event_name not in term_names:
++    return torch.zeros(env.num_envs, 6, device=env.device)
++  event = env.event_manager.get_term_cfg(event_name).func
++  if not isinstance(event, push_by_setting_velocity_with_record):
++    raise TypeError(
++      f"Event '{event_name}' must be a push_by_setting_velocity_with_record "
++      f"to observe the disturbance, got {type(event).__name__}."
++    )
++  return event.push_velocity.clone()
+diff --git a/src/mjlab/tasks/dreamwaq/mdp/velocity_command.py b/src/mjlab/tasks/dreamwaq/mdp/velocity_command.py
+index 5c1f72d4e..b9e56cf73 100644
+--- a/src/mjlab/tasks/dreamwaq/mdp/velocity_command.py
++++ b/src/mjlab/tasks/dreamwaq/mdp/velocity_command.py
+@@ -261,6 +261,10 @@ class UniformVelocityCommand(CommandTerm):
+     base_mat_ws = matrix_from_quat(base_quat_w).cpu().numpy()
+     lin_vel_bs = self.robot.data.root_link_lin_vel_b.cpu().numpy()
+     ang_vel_bs = self.robot.data.root_link_ang_vel_b.cpu().numpy()
++    # CENet's body-velocity estimate, published by the play policy
++    # (see DreamwaqActorModel.bind_debug_env); absent outside play.
++    pred_vel_bs = getattr(self._env, "cenet_velocity_estimate", None)
++    pred_vel_nps = pred_vel_bs.cpu().numpy() if pred_vel_bs is not None else None
+ 
+     scale = self.cfg.viz.scale
+     z_offset = self.cfg.viz.z_offset
+@@ -318,6 +322,22 @@ class UniformVelocityCommand(CommandTerm):
+         act_ang_from, act_ang_to, color=(0.0, 1.0, 0.4, 0.7), width=0.015
+       )
+ 
++      # Predicted linear velocity arrow (magenta).
++      if pred_vel_nps is not None and batch < len(pred_vel_nps):
++        pred_vel_b = pred_vel_nps[batch]
++        pred_from = local_to_world(np.array([0, 0, z_offset]) * scale)
++        pred_to = local_to_world(
++          (np.array([0, 0, z_offset]) + np.array([pred_vel_b[0], pred_vel_b[1], 0]))
++          * scale
++        )
++        visualizer.add_arrow(
++          pred_from,
++          pred_to,
++          color=(1.0, 0.2, 0.8, 0.8),
++          width=0.015,
++          label="CENet v_hat",
++        )
++
+ 
+ @dataclass(kw_only=True)
+ class UniformVelocityCommandCfg(CommandTermCfg):
+diff --git a/src/mjlab/tasks/dreamwaq/rl/algorithm/dreamwaq_ppo.py b/src/mjlab/tasks/dreamwaq/rl/algorithm/dreamwaq_ppo.py
+index cd4dddad8..e8f4871af 100644
+--- a/src/mjlab/tasks/dreamwaq/rl/algorithm/dreamwaq_ppo.py
++++ b/src/mjlab/tasks/dreamwaq/rl/algorithm/dreamwaq_ppo.py
+@@ -24,7 +24,8 @@ new episode.
+ 
+ from __future__ import annotations
+ 
+-from typing import cast
++import math
++from typing import Any, cast
+ 
+ import torch
+ import torch.nn as nn
+@@ -33,7 +34,8 @@ from rsl_rl.algorithms import PPO
+ from tensordict import TensorDict
+ from torch.distributed import ReduceOp, all_reduce, broadcast
+ 
+-from mjlab.tasks.dreamwaq.rl.network.actor import DreamwaqActorModel
++from mjlab.tasks.dreamwaq.rl.metrics import CenetMetrics
++from mjlab.tasks.dreamwaq.rl.network.actor import BOOT_FLAG_KEY, DreamwaqActorModel
+ 
+ 
+ def _tensor(obs: TensorDict, key: str) -> torch.Tensor:
+@@ -47,7 +49,17 @@ def _tensor(obs: TensorDict, key: str) -> torch.Tensor:
+ 
+ 
+ class DreamwaqPPO(PPO):
+-  """PPO with DreamWaQ's CENet auxiliary losses."""
++  """PPO with DreamWaQ's CENet auxiliary losses and adaptive bootstrapping.
++
++  AdaBoot (paper Eq. 8) replaces the estimated body velocity ``v_hat_t`` with the
++  simulated ground truth ``v_t`` in the policy input with probability
++  ``1 - p_boot``, where ``p_boot = 1 - tanh(CV(R))`` is recomputed once per
++  learning iteration from ``R``, the vector of per-environment returns of the
++  most recently completed episode. The mask is drawn per environment once per
++  rollout (``boot_granularity="env"``, default) or once for the whole rollout
++  (``"iteration"``), recorded in the rollout storage and replayed during the
++  update so the PPO importance ratio stays exact.
++  """
+ 
+   recon_target_key = "cenet_recon_target"
+   """Storage key holding ``o_{t+1}``; assembled in :meth:`compute_returns`."""
+@@ -63,7 +75,9 @@ class DreamwaqPPO(PPO):
+         (actor, critic and rollout storage).
+       dreamwaq_cfg: Optional overrides: ``beta`` (KL weight), ``ce_coef``
+         (weight of ``L_CE`` relative to the PPO loss), ``obs_target_group`` and
+-        ``velocity_target_group`` (environment observation groups).
++        ``velocity_target_group`` (environment observation groups), ``adaboot``
++        (enable adaptive bootstrapping) and ``boot_granularity`` (``"env"`` or
++        ``"iteration"``).
+       **kwargs: Keyword arguments forwarded to :class:`rsl_rl.algorithms.PPO`.
+     """
+     super().__init__(*args, **kwargs)
+@@ -71,10 +85,152 @@ class DreamwaqPPO(PPO):
+     self.beta = float(cfg.pop("beta", 1.0))
+     self.ce_coef = float(cfg.pop("ce_coef", 1.0))
+     self.o_target_group = str(cfg.pop("obs_target_group", "cenet_target_o"))
+-    self.v_target_group = str(cfg.pop("velocity_target_group", "cenet_target_v"))
++    # The actor owns the ground-truth group name (it mixes the estimate with it);
++    # fall back to its value unless explicitly overridden.
++    default_v_group = getattr(self.actor, "velocity_target_group", "cenet_target_v")
++    self.v_target_group = str(cfg.pop("velocity_target_group", default_v_group))
++    self.adaboot = bool(cfg.pop("adaboot", False))
++    self.boot_granularity = str(cfg.pop("boot_granularity", "env"))
++    if self.boot_granularity not in ("env", "iteration"):
++      raise ValueError(
++        f"boot_granularity must be 'env' or 'iteration', got '{self.boot_granularity}'."
++      )
++    recon_terms = cfg.pop("recon_terms", None)
+     if cfg:
+       raise ValueError(f"Unknown dreamwaq_cfg keys: {sorted(cfg)}.")
+ 
++    # CENet diagnostics: velocity estimate error and per-term reconstruction
++    # error, both as percentages of each signal's own variation.
++    self.cenet_metrics = CenetMetrics(
++      obs_dim=int(self.actor.obs_dim),
++      recon_terms=recon_terms,
++      device=self.device,
++    )
++
++    # AdaBoot state. Buffers are pre-allocated so their values can be written
++    # from inside the rollout's inference mode.
++    self.p_boot = 0.0
++    """Probability of feeding the CENet estimate to the policy next rollout."""
++    num_envs = self.storage.num_envs
++    self._boot_mask = torch.zeros(
++      self.storage.num_transitions_per_env, num_envs, 1, device=self.device
++    )
++    self._episode_return = torch.zeros(num_envs, device=self.device)
++    self._last_episode_return = torch.zeros(num_envs, device=self.device)
++    self._has_episode_return = torch.zeros(
++      num_envs, dtype=torch.bool, device=self.device
++    )
++    self._boot_fraction = 0.0
++    self._iteration_boot = 0.0
++
++  def act(self, obs: TensorDict) -> torch.Tensor:
++    """Sample actions, drawing the AdaBoot mask before the actor forward."""
++    if self.adaboot:
++      mask = self._draw_boot_mask()
++      # The policy reads the mask from the observation dict; the rollout
++      # storage copy ignores unknown keys, so it is re-injected in
++      # :meth:`compute_returns` from the buffer.
++      obs[BOOT_FLAG_KEY] = mask
++      self._boot_mask[self.storage.step].copy_(mask)
++    return super().act(obs)
++
++  def process_env_step(
++    self,
++    obs: TensorDict,
++    rewards: torch.Tensor,
++    dones: torch.Tensor,
++    extras: dict[str, Any],
++  ) -> None:
++    """Track AdaBoot statistics and publish CENet metrics.
++
++    The metrics are written into ``extras["log"]``, which mjlab's logger
++    forwards to W&B as ``Metrics/...`` and prints in the console.
++    """
++    if self.adaboot:
++      self._episode_return += rewards
++      done_ids = dones.nonzero(as_tuple=False).squeeze(-1)
++      if done_ids.numel() > 0:
++        self._last_episode_return[done_ids] = self._episode_return[done_ids]
++        self._has_episode_return[done_ids] = True
++        self._episode_return[done_ids] = 0.0
++    metrics = extras.get("log")
++    if metrics is not None:
++      metrics.update(self._cenet_step_metrics(obs, dones))
++      if self.adaboot:
++        # p_boot is the probability in effect for this rollout; the fraction is
++        # the share of environments that actually used the estimate this step.
++        metrics["Metrics/adaboot_pboot"] = self.p_boot
++        observations = self.transition.observations
++        if observations is not None and BOOT_FLAG_KEY in observations:
++          metrics["Metrics/adaboot_fraction"] = float(
++            _tensor(observations, BOOT_FLAG_KEY).mean()
++          )
++    super().process_env_step(obs, rewards, dones, extras)
++
++  def _cenet_step_metrics(
++    self, obs: TensorDict, dones: torch.Tensor
++  ) -> dict[str, float]:
++    """CENet errors of the policy step that was just taken.
++
++    ``obs`` is the post-step observation ``o_{t+1}``: its clean
++    ``cenet_target_o`` group is the reconstruction target of the step, and the
++    environments that terminated skip it because their frame belongs to the
++    next episode. The velocity error is reported both in m/s and as a
++    percentage of the running velocity scale.
++    """
++    observations = self.transition.observations
++    actor = self.actor
++    if observations is None or not isinstance(actor, DreamwaqActorModel):
++      return {}
++    output = actor.last_cenet_output
++    estimate = output.velocity.detach()
++    velocity_target = _tensor(observations, self.v_target_group).detach()
++    metrics = {
++      "Metrics/velocity_est_error": float(
++        (estimate - velocity_target).norm(dim=-1).mean()
++      )
++    }
++    metrics.update(self.cenet_metrics.velocity_metrics(estimate, velocity_target))
++    metrics.update(
++      self.cenet_metrics.reconstruction_metrics(
++        actor.cenet,
++        output.mu.detach(),
++        _tensor(obs, self.o_target_group).detach(),
++        dones.reshape(-1) <= 0,
++      )
++    )
++    metrics.update(self.cenet_metrics.latent_metrics(output.mu.detach(), dones))
++    return metrics
++
++  def _draw_boot_mask(self) -> torch.Tensor:
++    """Draw the per-step bootstrap mask (1 = use v_hat, 0 = use v_gt)."""
++    num_envs = self.storage.num_envs
++    if self.boot_granularity == "iteration":
++      if self.storage.step == 0:
++        self._iteration_boot = float(
++          torch.bernoulli(torch.tensor(self.p_boot, device=self.device))
++        )
++      return torch.full((num_envs, 1), self._iteration_boot, device=self.device)
++    return torch.bernoulli(torch.full((num_envs, 1), self.p_boot, device=self.device))
++
++  def _boot_probability(self) -> float:
++    """Return ``p_boot = 1 - tanh(CV(R))`` (paper Eq. 8).
++
++    ``R`` holds the return of the most recently completed episode of every
++    environment that has completed at least one. With fewer than two such
++    environments the coefficient of variation is undefined and bootstrapping
++    stays off; a non-positive mean return signals an unlearned policy, so the
++    magnitude is used for the ratio and the result never leaves [0, 1].
++    """
++    returns = self._last_episode_return[self._has_episode_return]
++    if returns.numel() < 2:
++      return 0.0
++    mean = float(returns.mean().abs().clamp_min(1e-6))
++    cv = float(returns.std()) / mean
++    if not math.isfinite(cv):
++      return 0.0
++    return min(max(1.0 - math.tanh(cv), 0.0), 1.0)
++
+   def compute_returns(self, obs: TensorDict) -> None:
+     """Compute returns and assemble the reconstruction targets."""
+     super().compute_returns(obs)
+@@ -91,6 +247,16 @@ class DreamwaqPPO(PPO):
+     # Terminal steps are followed by a reset, so their "next frame" belongs to
+     # a new episode and must not be reconstructed.
+     st.observations[self.recon_mask_key] = 1.0 - st.dones.float()
++    # Refresh the velocity scale used by the percentage metrics.
++    self.cenet_metrics.update_velocity_statistics(
++      _tensor(st.observations, self.v_target_group).flatten(0, 1)
++    )
++    if self.adaboot:
++      # Replay the mask drawn during the rollout into the storage used by the
++      # mini-batch generator, and update p_boot from this iteration's episodes.
++      st.observations[BOOT_FLAG_KEY] = self._boot_mask.clone()
++      self._boot_fraction = float(self._boot_mask.mean())
++      self.p_boot = self._boot_probability()
+ 
+   def update(self) -> dict[str, float]:
+     """Run PPO epochs with the CENet auxiliary losses."""
+@@ -100,6 +266,9 @@ class DreamwaqPPO(PPO):
+     mean_est_loss = 0.0
+     mean_recon_loss = 0.0
+     mean_kl_loss = 0.0
++    mean_ce_loss = 0.0
++    valid_updates = 0
++    skipped_updates = 0
+     # RND loss
+     mean_rnd_loss = 0.0 if self.rnd else None
+     # Symmetry loss
+@@ -259,6 +428,13 @@ class DreamwaqPPO(PPO):
+           if self.symmetry.use_mirror_loss:
+             loss = loss + self.symmetry.mirror_loss_coeff * symmetry_loss
+ 
++      # Guard against a non-finite loss (e.g. a diverged estimator): skipping
++      # the mini-batch keeps NaN out of the optimizer and the parameters.
++      if not torch.isfinite(loss):
++        self.optimizer.zero_grad()
++        skipped_updates += 1
++        continue
++
+       # Compute the gradients for PPO
+       self.optimizer.zero_grad()
+       loss.backward()
+@@ -272,9 +448,22 @@ class DreamwaqPPO(PPO):
+         self.reduce_parameters()
+ 
+       # Apply the gradients for PPO
+-      nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
+-      nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
++      actor_grad_norm = nn.utils.clip_grad_norm_(
++        self.actor.parameters(), self.max_grad_norm
++      )
++      critic_grad_norm = nn.utils.clip_grad_norm_(
++        self.critic.parameters(), self.max_grad_norm
++      )
++      if not (
++        bool(torch.isfinite(actor_grad_norm)) and bool(torch.isfinite(critic_grad_norm))
++      ):
++        # A non-finite gradient would poison the shared optimizer state (and
++        # with it the policy's action std) instead of recovering.
++        self.optimizer.zero_grad()
++        skipped_updates += 1
++        continue
+       self.optimizer.step()
++      valid_updates += 1
+       # Apply the gradients for RND
+       if self.rnd:
+         self.rnd.optimizer.step()
+@@ -286,6 +475,9 @@ class DreamwaqPPO(PPO):
+       mean_est_loss += est_loss.item()
+       mean_recon_loss += recon_loss.item()
+       mean_kl_loss += ce_kl_loss.item()
++      mean_ce_loss += (
++        self.ce_coef * (est_loss + recon_loss + self.beta * ce_kl_loss).detach()
++      ).item()
+       # RND loss
+       if mean_rnd_loss is not None and rnd_loss is not None:
+         mean_rnd_loss += rnd_loss.item()
+@@ -301,13 +493,20 @@ class DreamwaqPPO(PPO):
+       self.rnd.update_normalization(obs)
+ 
+     # Divide the losses by the number of updates
+-    num_updates = self.num_learning_epochs * self.num_mini_batches
++    num_updates = max(valid_updates, 1)
++    if skipped_updates:
++      print(
++        f"[WARN] DreamwaqPPO skipped {skipped_updates}/"
++        f"{self.num_learning_epochs * self.num_mini_batches} non-finite "
++        "mini-batches."
++      )
+     mean_value_loss /= num_updates
+     mean_surrogate_loss /= num_updates
+     mean_entropy /= num_updates
+     mean_est_loss /= num_updates
+     mean_recon_loss /= num_updates
+     mean_kl_loss /= num_updates
++    mean_ce_loss /= num_updates
+     if mean_rnd_loss is not None:
+       mean_rnd_loss /= num_updates
+     if mean_symmetry_loss is not None:
+@@ -321,6 +520,7 @@ class DreamwaqPPO(PPO):
+       "cenet_est": mean_est_loss,
+       "cenet_recon": mean_recon_loss,
+       "cenet_kl": mean_kl_loss,
++      "cenet_total": mean_ce_loss,
+     }
+     if mean_rnd_loss is not None:
+       loss_dict["rnd"] = mean_rnd_loss
+@@ -332,6 +532,64 @@ class DreamwaqPPO(PPO):
+ 
+     return loss_dict
+ 
++  def save(self) -> dict:
++    """Save model state plus the AdaBoot and metric-scale state."""
++    saved_dict = super().save()
++    saved_dict["cenet_metrics_state_dict"] = self.cenet_metrics.state_dict()
++    if self.adaboot:
++      saved_dict["adaboot_state_dict"] = {
++        "p_boot": self.p_boot,
++        "episode_return": self._episode_return,
++        "last_episode_return": self._last_episode_return,
++        "has_episode_return": self._has_episode_return,
++      }
++    return saved_dict
++
++  def load(self, loaded_dict: dict, load_cfg: dict | None, strict: bool) -> bool:
++    """Restore model state and, when present, the AdaBoot/metric state."""
++    load_iteration = super().load(loaded_dict, load_cfg, strict)
++    metrics_state = loaded_dict.get("cenet_metrics_state_dict")
++    if metrics_state is not None:
++      self.cenet_metrics.load_state_dict(metrics_state)
++    if self.adaboot:
++      adaboot_state = loaded_dict.get("adaboot_state_dict")
++      if adaboot_state is None:
++        print(
++          "[WARN] Checkpoint has no AdaBoot state; p_boot restarts from 0 "
++          "(no bootstrapping)."
++        )
++        self.p_boot = 0.0
++        self._episode_return.zero_()
++        self._last_episode_return.zero_()
++        self._has_episode_return.zero_()
++      else:
++        self.p_boot = float(adaboot_state["p_boot"])
++        buffers = {
++          "episode_return": self._episode_return,
++          "last_episode_return": self._last_episode_return,
++          "has_episode_return": self._has_episode_return,
++        }
++        mismatched = [
++          name
++          for name, buffer in buffers.items()
++          if tuple(adaboot_state[name].shape) != tuple(buffer.shape)
++        ]
++        if mismatched:
++          # The per-environment statistics only fit a run with the same number
++          # of environments (a checkpoint trained with 4096 envs cannot be
++          # loaded into the 1-env play environment). Keep the curriculum level
++          # p_boot and restart the statistics.
++          print(
++            "[WARN] AdaBoot state was recorded for a different number of "
++            f"environments ({mismatched}); restarting those statistics."
++          )
++          for buffer in buffers.values():
++            buffer.zero_()
++        else:
++          for name, buffer in buffers.items():
++            buffer.copy_(adaboot_state[name])
++    return load_iteration
++
+   def _cenet_losses(
+     self, observations: TensorDict, batch_size: int
+   ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+diff --git a/src/mjlab/tasks/dreamwaq/rl/network/actor.py b/src/mjlab/tasks/dreamwaq/rl/network/actor.py
+index e7604c7e7..6eb060d93 100644
+--- a/src/mjlab/tasks/dreamwaq/rl/network/actor.py
++++ b/src/mjlab/tasks/dreamwaq/rl/network/actor.py
+@@ -20,6 +20,7 @@ from the posterior instead.
+ from __future__ import annotations
+ 
+ import copy
++from typing import Any
+ 
+ import torch
+ import torch.nn as nn
+@@ -29,6 +30,23 @@ from tensordict import TensorDict
+ 
+ from mjlab.tasks.dreamwaq.rl.network.cenet import CENet, CENetOutput
+ 
++BOOT_FLAG_KEY = "cenet_boot_flag"
++"""Observation key holding AdaBoot's per-step mask (1 = use v_hat, 0 = use v_gt).
++
++Written by ``DreamwaqPPO`` during rollouts and replayed from the rollout
++storage during updates, so the policy input is identical in both passes.
++"""
++
++
++def _tensor(obs: TensorDict, key: str) -> torch.Tensor:
++  """Return an observation tensor, rejecting nested observation groups."""
++  value = obs[key]
++  if not isinstance(value, torch.Tensor):
++    raise TypeError(
++      f"Expected observation '{key}' to be a tensor, got {type(value).__name__}."
++    )
++  return value
++
+ 
+ class DreamwaqActorModel(MLPModel):
+   """Policy MLP fed with ``[o_t, v_hat_t, z_t]`` estimated by CENet.
+@@ -104,6 +122,7 @@ class DreamwaqActorModel(MLPModel):
+     self._cenet_obs_group = obs_group
+     self._cenet_extra_dim = CENet.velocity_dim + latent_dim
+     self._last_cenet_output: CENetOutput | None = None
++    self._v_target_group = str(cenet_cfg.pop("velocity_target_group", "cenet_target_v"))
+ 
+     super().__init__(
+       obs=obs,
+@@ -147,6 +166,7 @@ class DreamwaqActorModel(MLPModel):
+       activation=cenet_cfg.pop("activation", activation),
+       obs_normalization=bool(cenet_cfg.pop("obs_normalization", True)),
+       history_order=cenet_cfg.pop("history_order", "oldest_first"),
++      log_var_range=tuple(cenet_cfg.pop("log_var_range", (-10.0, 10.0))),
+     )
+     if cenet_cfg:
+       raise ValueError(f"Unknown CENet config keys: {sorted(cenet_cfg)}.")
+@@ -156,6 +176,30 @@ class DreamwaqActorModel(MLPModel):
+     """Observation group holding the flattened CENet history input."""
+     return self._cenet_obs_group
+ 
++  @property
++  def velocity_target_group(self) -> str:
++    """Observation group holding the ground-truth base linear velocity v_t."""
++    return self._v_target_group
++
++  def bind_debug_env(self, env: Any) -> None:
++    """Expose the latest velocity estimate to a play environment.
++
++    The viewer's debug visualizer (the task's velocity command term) reads
++    ``env.cenet_velocity_estimate`` and draws it as an arrow next to the
++    commanded and measured velocities. Only the play path binds an
++    environment, so training never pays this cost.
++    """
++    self._debug_env = env
++    env.cenet_velocity_estimate = torch.zeros(
++      env.num_envs, self.cenet.velocity_dim, device=env.device
++    )
++
++  def _publish_velocity_estimate(self, velocity: torch.Tensor) -> None:
++    """Mirror the estimate onto the bound play environment (debug only)."""
++    env = getattr(self, "_debug_env", None)
++    if env is not None:
++      env.cenet_velocity_estimate.copy_(velocity.detach())
++
+   @property
+   def last_cenet_output(self) -> CENetOutput:
+     """CENet outputs of the most recent forward pass.
+@@ -194,7 +238,17 @@ class DreamwaqActorModel(MLPModel):
+     # input stays deterministic and the PPO ratio has no resampling noise.
+     cenet_output = self.cenet(self._cenet_history(obs), sample=False)
+     self._last_cenet_output = cenet_output
+-    return torch.cat((proprio, cenet_output.velocity, cenet_output.z), dim=-1)
++    velocity = cenet_output.velocity
++    self._publish_velocity_estimate(velocity)
++    # AdaBoot (paper Eq. 8): swap the velocity estimate for the simulated
++    # ground truth wherever the AdaBoot mask says so. The mask is absent unless
++    # AdaBoot is enabled, which also covers inference where no ground truth
++    # exists and the estimate is always used.
++    if BOOT_FLAG_KEY in obs:
++      mask = _tensor(obs, BOOT_FLAG_KEY)
++      ground_truth = _tensor(obs, self._v_target_group)
++      velocity = mask * velocity + (1.0 - mask) * ground_truth
++    return torch.cat((proprio, velocity, cenet_output.z), dim=-1)
+ 
+   def update_normalization(self, obs: TensorDict) -> None:
+     """Update the actor and CENet observation normalization statistics."""
+@@ -202,7 +256,16 @@ class DreamwaqActorModel(MLPModel):
+     self.cenet.update_normalization(self._cenet_history(obs))
+ 
+   def as_onnx(self, verbose: bool) -> nn.Module:
+-    """Return the ONNX export wrapper, CENet included."""
++    """Return the ONNX export wrapper, CENet included.
++
++    The wrapper takes the flattened observation history and uses its newest
++    frame as ``o_t``, so the policy must consume a single observation group.
++    """
++    if len(self.obs_groups) != 1:
++      raise ValueError(
++        "ONNX export assumes the policy consumes a single observation group "
++        f"whose newest history frame doubles as o_t, got {self.obs_groups}."
++      )
+     return _OnnxDreamwaqActorModel(self, verbose)
+ 
+   def as_jit(self) -> nn.Module:
+diff --git a/src/mjlab/tasks/dreamwaq/rl/network/cenet.py b/src/mjlab/tasks/dreamwaq/rl/network/cenet.py
+index 3140a2c68..a42ad015b 100644
+--- a/src/mjlab/tasks/dreamwaq/rl/network/cenet.py
++++ b/src/mjlab/tasks/dreamwaq/rl/network/cenet.py
+@@ -58,6 +58,7 @@ class CENet(nn.Module):
+     activation: str = "elu",
+     obs_normalization: bool = True,
+     history_order: Literal["oldest_first", "newest_first"] = "oldest_first",
++    log_var_range: tuple[float, float] = (-10.0, 10.0),
+   ) -> None:
+     """Initialize CENet.
+ 
+@@ -76,12 +77,16 @@ class CENet(nn.Module):
+         matches mjlab's observation history buffers, ``"newest_first"`` matches
+         the paper's ``[o_t, ..., o_{t-H}]``. Frames are converted to the paper
+         order internally.
++      log_var_range: Bounds on the posterior log-variance. ``exp(log_var)``
++        overflows to infinity beyond ~88, which turns the KL term (and its
++        gradients) into NaN and poisons every parameter sharing the optimizer.
+     """
+     super().__init__()
+     self.obs_dim = obs_dim
+     self.history_length = history_length
+     self.latent_dim = latent_dim
+     self.history_order = history_order
++    self.log_var_range = (float(log_var_range[0]), float(log_var_range[1]))
+ 
+     # One set of per-dimension statistics is shared by every frame of the
+     # history and by the reconstruction target of the decoder.
+@@ -140,7 +145,11 @@ class CENet(nn.Module):
+     output = self.encoder(latent.flatten(start_dim=-2))
+     velocity = output[..., : self.velocity_dim]
+     mu = output[..., self.velocity_dim : self.velocity_dim + self.latent_dim]
+-    log_var = output[..., self.velocity_dim + self.latent_dim :]
++    # Keep the posterior bounded: the KL term evaluates exp(log_var), so an
++    # unbounded log-variance produces inf/NaN losses and gradients.
++    log_var = output[..., self.velocity_dim + self.latent_dim :].clamp(
++      self.log_var_range[0], self.log_var_range[1]
++    )
+     return velocity, mu, log_var
+ 
+   def decode(self, z: torch.Tensor) -> torch.Tensor:
+diff --git a/src/mjlab/tasks/dreamwaq/rl/runner.py b/src/mjlab/tasks/dreamwaq/rl/runner.py
+index 5cd9ec91b..60071f81d 100644
+--- a/src/mjlab/tasks/dreamwaq/rl/runner.py
++++ b/src/mjlab/tasks/dreamwaq/rl/runner.py
+@@ -1,4 +1,5 @@
+ import wandb
++from rsl_rl.models import MLPModel
+ from rsl_rl.utils import WandbLogWriter
+ 
+ from mjlab.rl import RslRlVecEnvWrapper
+@@ -7,11 +8,20 @@ from mjlab.rl.exporter_utils import (
+   get_base_metadata,
+ )
+ from mjlab.rl.runner import MjlabOnPolicyRunner
++from mjlab.tasks.dreamwaq.rl.network.actor import DreamwaqActorModel
+ 
+ 
+ class DreamwaqOnPolicyRunner(MjlabOnPolicyRunner):
+   env: RslRlVecEnvWrapper
+ 
++  def get_inference_policy(self, device: str | None = None) -> MLPModel:
++    """Return the play policy and expose its velocity estimate to the viewer."""
++    policy = super().get_inference_policy(device)
++    if isinstance(policy, DreamwaqActorModel):
++      # The viewer's debug visualizer draws the CENet estimate from this buffer.
++      policy.bind_debug_env(self.env.unwrapped)
++    return policy
++
+   def save(self, path: str, infos=None):
+     super().save(path, infos)
+     policy_dir, filename, onnx_path = self._get_export_paths(path)
+@@ -19,7 +29,13 @@ class DreamwaqOnPolicyRunner(MjlabOnPolicyRunner):
+       self.export_policy_to_onnx(str(policy_dir), filename)
+       is_wandb = isinstance(self.logger.writer, WandbLogWriter)
+       run_name: str = wandb.run.name if is_wandb and wandb.run else "local"  # type: ignore[assignment]
+-      metadata = get_base_metadata(self.env.unwrapped, run_name)
++      # The exported model consumes the CENet observation history (six frames),
++      # not the 45-dim actor observation, so describe that group instead.
++      actor = self.alg.actor
++      obs_group = (
++        actor.cenet_group if isinstance(actor, DreamwaqActorModel) else "actor"
++      )
++      metadata = get_base_metadata(self.env.unwrapped, run_name, obs_group=obs_group)
+       attach_metadata_to_onnx(str(onnx_path), metadata)
+       if is_wandb and self.cfg["upload_model"]:
+         wandb.save(str(onnx_path), base_path=str(policy_dir))
+diff --git a/src/mjlab/tasks/velocity/config/go1/env_cfgs.py b/src/mjlab/tasks/velocity/config/go1/env_cfgs.py
+index 144fe0a6f..41e4f2040 100644
+--- a/src/mjlab/tasks/velocity/config/go1/env_cfgs.py
++++ b/src/mjlab/tasks/velocity/config/go1/env_cfgs.py
+@@ -156,7 +156,7 @@ def unitree_go1_rough_env_cfg(
+       "ranges": (0.3, 1.5),
+       "shared_random": True,
+     },
+-  )#滑动摩擦
++  )  # 滑动摩擦
+   cfg.events["foot_friction_spin"] = EventTermCfg(
+     mode="startup",
+     func=envs_mdp.dr.geom_friction,
+@@ -168,7 +168,7 @@ def unitree_go1_rough_env_cfg(
+       "ranges": (1e-4, 2e-2),
+       "shared_random": True,
+     },
+-  )#扭转摩擦
++  )  # 扭转摩擦
+   cfg.events["foot_friction_roll"] = EventTermCfg(
+     mode="startup",
+     func=envs_mdp.dr.geom_friction,
+@@ -180,7 +180,7 @@ def unitree_go1_rough_env_cfg(
+       "ranges": (1e-5, 5e-3),
+       "shared_random": True,
+     },
+-  )#滚动摩擦
++  )  # 滚动摩擦
+   cfg.events["base_com"].params["asset_cfg"].body_names = ("trunk",)
+ 
+   cfg.rewards["pose"].params["std_standing"] = {

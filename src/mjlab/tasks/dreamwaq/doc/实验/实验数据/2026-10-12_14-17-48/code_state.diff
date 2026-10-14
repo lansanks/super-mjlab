@@ -1,0 +1,223 @@
+--- git commit ---
+4dfa594e0ea10100285f39e6c039fd3a5c5d57b1
+
+
+--- git status ---
+On branch spmj
+Your branch is ahead of 'mj/spmj' by 3 commits.
+  (use "git push" to publish your local commits)
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   docs/source/changelog.rst
+	modified:   "src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/CENET.md"
+	modified:   "src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/\350\256\272\346\226\207\346\234\252\346\230\216\347\241\256\344\271\213\345\244\204.md"
+	modified:   src/mjlab/tasks/dreamwaq/rl/network/actor.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	tests/test_dreamwaq_gradient_routing.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/docs/source/changelog.rst b/docs/source/changelog.rst
+index 6d0a60acc..da77347b0 100644
+--- a/docs/source/changelog.rst
++++ b/docs/source/changelog.rst
+@@ -53,6 +53,12 @@ Added
+ Changed
+ ^^^^^^^
+ 
++- DreamWaQ's CENet is now optimized by its auxiliary loss alone: the actor
++  detaches ``v_hat_t`` and ``z_t`` before they enter the policy, so the PPO
++  gradient no longer reaches the CENet encoder. The auxiliary loss still feeds
++  the same backward pass, so the policy, value and CENet networks keep training
++  synchronously with a single optimizer.
++
+ - ``get_base_metadata`` accepts an optional ``obs_group`` argument (defaults to
+   ``"actor"``) so tasks whose policy input is an observation history can
+   describe the group the exported model actually consumes.
+diff --git "a/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/CENET.md" "b/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/CENET.md"
+index 811460a0c..d810cc7d9 100644
+--- "a/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/CENET.md"
++++ "b/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/CENET.md"
+@@ -3,7 +3,7 @@
+ > 本文只描述"怎么改"，不含任何代码改动。
+ > 依据只有两处：论文 `src/mjlab/tasks/dreamwaq/doc/dreamwaq.pdf` 和当前仓库代码。
+ > 当前仓库的 actor 观测组（45 维）和 critic 观测组（特权观测）保持现状，不要求与论文完全一致。
+-> 各轮训练的实验数据、曲线读数与阶段性结论见 `../实验记录.md`。
++> 各轮训练的实验数据、曲线读数与阶段性结论见 `../实验/实验记录.md`。
+ 
+ ---
+ 
+@@ -25,7 +25,7 @@
+ **CENet 不做成一个单独训练的模块，而是直接挂在 Actor 模型内部**：
+ 
+ - 每个 control step，Actor 前向时顺带跑一遍 CENet 编码器，拿到 `v̂` 和 `z`，拼成 `[o_t, v̂, z]` 再进 MLP 出动作；
+-- 训练时 CENet 沿 PPO 一起更新：策略梯度经过 `[o_t, v̂, z]` 回传到编码器（v̂、z 不 detach），辅助损失 `L_CE = L_est + L_VAE` 与 PPO 的损失相加后一次 backward、同一个优化器更新（论文未直接说明梯度路径，这是本复现的实现选择，见 4.2）；
++- 训练时 CENet 只由辅助损失更新：actor 路径上的 v̂、z **detach**，PPO 的梯度不进入编码器；辅助损失 `L_CE = L_est + L_VAE` 与 PPO 的损失相加后仍是一次 backward、同一个优化器更新（论文未直接说明梯度路径，这是本复现的实现选择，见 4.2）；
+ - 因为 CENet 是 Actor 的子模块，它天然被同一个 Adam 优化器、同一份 `actor_state_dict`、同一个 ONNX 导出覆盖，不需要给 rsl_rl 动存储结构、也不需要第二套优化器。
+ 
+ ---
+@@ -67,6 +67,10 @@
+    └──────────────────────────────────────────────────────────────────────────────┘
+ ```
+ 
++> 梯度路径（2026-10-12 起）：PPO 损失只更新策略 MLP 与 critic；CENet（编码器 + 两个
++> 后验/速度头 + 解码器）只由 `L_CE` 更新——actor 路径上的 v̂、z 已 detach，对策略来说是常数。
++> 详见 4.2 与《论文未明确之处.md》第 1 条。
++
+ ---
+ 
+ ## 3. 环境侧：新增 3 个观测组（只增不改）
+@@ -115,9 +119,9 @@
+ 
+ 推理/导出接口建议：**输入 270 维历史 → 内部取最新一帧当 o_t → 输出 12 维动作均值**。部署端只需要维护一个 45 维 × 6 帧的 ring buffer。
+ 
+-一个重要细节（本复现已拍板）：**v̂、z 不 detach，CENet 沿 PPO 一起更新**。策略梯度会经过 `[o_t, v̂, z]` 回传到编码器；`L_CE` 与 PPO 损失相加后一次 backward、同一个优化器更新，编码器同时服务"估计准"和"策略回报"两个目标（端到端）。
++一个重要细节（2026-10-12 起拍板，此前为耦合版）：**v̂、z 在 actor 路径上 detach，CENet 只由 `L_CE` 更新**。编码器不接收策略梯度，只服务"估计准"这一个目标；`L_CE` 与 PPO 损失相加后仍是同一次 backward、同一个 Adam 更新（单阶段"同步训练"不变）。实现上 `.detach()` 只加在送进策略的那一份上，缓存给辅助损失的 `_last_cenet_output` 保留计算图——两侧共用同一次 CENet 前向。
+ 
+-需要如实标注的是：论文对"策略梯度是否回传编码器"没有任何直接表述——II-C 只说 CENet 由 `L_CE` 优化，III-B 只说三个网络同步训练。因此"一起更新"是本复现的实现选择，不是论文结论；按此实现即可，不再做 detach 开关或 A/B。
++需要如实标注的是：论文对"策略梯度是否回传编码器"没有任何直接表述——II-C 只写 CENet 由 `L_CE` 优化，III-B 只说三个网络同步训练；但 Fig.1 的 "Policy gradient" 虚线只连接 Actor 与 Critic，Fig.2 图注把共享编码器的职责写成"联合提供估计"（estimation jointly），III-E 把估计精度归因于 VAE 自编码。因此 detach 是"论文文本支持、但非论文明文"的实现选择（证据与理由见《论文未明确之处.md》第 1 条）。实现上写死，不做运行时开关；两版对照靠 git 历史（`4dfa594e0` 为分界）与各自的 run。
+ 
+ ---
+ 
+@@ -251,7 +255,7 @@ compute_returns 末尾：用本轮结算的 episode return 更新 p_boot（下
+ 2. **done 步的"下一帧"是 reset 后的观测**：重建项要 mask 掉，否则 decoder 会被要求去重建一个不相干的帧。
+ 3. **history 顺序**：mjlab 给的是旧 → 新 `[o_{t-5}, ..., o_t]`，论文写的是新 → 旧 `[o_t, ..., o_{t-5}]`。在模型里 flip 一次即可，选择一种后写死，不要前后不一致。
+ 4. **归一化**：不做归一化就套 N(0,I) 先验，KL 会变成一个尺度错位的正则项，训练会变得不可控（论文原话就是为了这个才归一化）。
+-5. **v̂、z 不 detach（已定）**：CENet 沿 PPO 一起更新，PPO 梯度经 `[o_t, v̂, z]` 回传编码器，`L_CE` 与 PPO 损失相加后一次 backward、同一个优化器。论文没有直接说明这一点（属本复现的实现选择），但实现上不要再加 detach、也不要拆成两套优化器。
++5. **v̂、z 必须 detach（已定，2026-10-12 起）**：actor 路径上的 v̂、z 加 `.detach()`，CENet 只由 `L_CE` 更新；辅助损失必须读 `_last_cenet_output` 里未 detach 的图（若把缓存也 detach，CENet 就完全学不到东西）。论文没有直接说明这一点（属本复现的实现选择，理由见《论文未明确之处.md》第 1 条），但不要拆成两套优化器——同一个 Adam 才符合论文"同步训练"的口径。
+ 6. **ONNX 导出**：默认的 `as_onnx()` 只吃 45 维 actor 观测，会导出一个完全不包含 CENet 的模型；必须覆写，导出输入是 270 维历史、输出 12 维动作，并且经 play 环境验证一遍。
+ 7. **优化器与学习率**：CENet 参数在 actor 内，自动共用 PPO 的优化器；论文是全网络固定 Adam 1e-3，而 mjlab 默认 `schedule="adaptive"` 会连 CENet 的学习率一起调整，想严格对齐就把 schedule 设为 `fixed`。
+ 8. **旧 checkpoint 不兼容**：actor 的 state_dict 会多出 `cenet.*` 的键，旧模型无法 strict 加载，需要从头训。
+@@ -280,7 +284,7 @@ compute_returns 末尾：用本轮结算的 episode return 更新 p_boot（下
+ | λ（L_CE 相对 PPO 的权重） | 1.0 | 论文未给；影响辅助损失和策略损失的量级平衡 |
+ | L_est 单独权重 | 1.0 | 与重建项同量级；速度单位是 m/s，量级约 O(1)，可后续再调 |
+ | z 的用法 | 策略用 μ；VAE 重建采样 z；推理 μ | 见《论文未明确之处.md》第 2 条 |
+-| 策略梯度是否回传 CENet | 回传（不 detach，已定） | 论文未直接说明；本复现选择端到端一起更新 |
++| 策略梯度是否回传 CENet | 不回传（detach，已定） | 论文未明文；II-C 把 CENet 目标写成 `L_CE` 本身、Fig.1 的 policy gradient 不进 CENet（见《论文未明确之处.md》第 1 条） |
+ | AdaBoot 的 R 口径 | 每环境最近一次已完成 episode 的 return | 论文只说"episodic reward over m environments" |
+ | AdaBoot 掷骰粒度 | 每环境每次 rollout 一次（可切整轮一次） | 论文只说"per learning iteration" |
+ | AdaBoot 替换范围 | 只换 v，z 恒用 μ | z 没有真值可换 |
+@@ -294,7 +298,7 @@ compute_returns 末尾：用本轮结算的 episode return 更新 p_boot（下
+ ## 9. 验证步骤
+ 
+ 1. **静态检查**：`make check`（format + lint + type），维度断言写进模型构造函数（270、35、45、64）。
+-2. **不跑仿真的单测**：用假 obs TensorDict 构造模型和算法 —— 检查前向形状、`L_est/L_rec/L_kl` 可反向且 encoder 有梯度、移位逻辑（手工造 T=3 的序列验证目标对齐）、done mask 生效。
++2. **不跑仿真的单测**：用假 obs TensorDict 构造模型和算法 —— 检查前向形状、`L_est/L_rec/L_kl` 可反向且 encoder 有梯度、**策略损失不给 encoder 梯度**（`tests/test_dreamwaq_gradient_routing.py`）、移位逻辑（手工造 T=3 的序列验证目标对齐）、done mask 生效。
+ 3. **小规模冒烟训练**：小 env 数跑 2 次迭代，确认 loss_dict 出现 `cenet_est / cenet_recon / cenet_kl` 且数值有限、v̂ 的误差在下降。
+ 4. **导出验证**：导出 ONNX，确认输入 270、输出 12，并在 play 环境跑通推理。
+ 5. **回归**：确认没有动到公共代码；若改了 `src/mjlab/rl/config.py` 等公共文件，跑一遍 velocity 任务相关单测。
+diff --git "a/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/\350\256\272\346\226\207\346\234\252\346\230\216\347\241\256\344\271\213\345\244\204.md" "b/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/\350\256\272\346\226\207\346\234\252\346\230\216\347\241\256\344\271\213\345\244\204.md"
+index 716456bc9..0488ad12a 100644
+--- "a/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/\350\256\272\346\226\207\346\234\252\346\230\216\347\241\256\344\271\213\345\244\204.md"
++++ "b/src/mjlab/tasks/dreamwaq/doc/\345\244\215\347\216\260\346\226\271\346\241\210/\350\256\272\346\226\207\346\234\252\346\230\216\347\241\256\344\271\213\345\244\204.md"
+@@ -11,12 +11,34 @@
+ networks"（III-B）。没有任何公式或文字说明 v̂、z 送进策略之前是否 detach，
+ 也就是"策略梯度是否回传到 CENet 编码器"。
+ 
+-**我们的选择**：不 detach。v̂、z 直接进入策略，策略梯度经 `[o_t, v̂, z]` 一路回传到
+-CENet 编码器；`L_CE` 与 PPO 的损失相加后一次 backward、同一个优化器更新
+-（CENet 是 actor 的子模块，参数天然在 `actor.parameters()` 里）。
+-
+-**原因**：论文把三个网络描述为"同步训练"的单阶段流程，端到端共同更新与这一描述一致，
+-编码器同时服务"估计准"和"策略回报"两个目标。
++**我们的选择（2026-10-12 起）**：detach（stop-gradient）。actor 路径上的 v̂、z 一律加
++`.detach()`（`DreamwaqActorModel.get_latent`），PPO 损失对 CENet 参数的梯度严格为零；
++CENet 只由辅助损失 `L_CE = L_est + L_recon + β·KL` 更新。`L_CE` 与 PPO 损失仍在同一
++次 backward、同一个 Adam 里更新（"同步训练"的单阶段流程不变），缓存给辅助损失的
++`_last_cenet_output` 保留计算图。
++
++历史：`4dfa594e0`（2026-10-12 13:52）之前的 run 都是**不 detach 的耦合版本**（v̂、z
++直接进策略、策略梯度回传编码器）；该提交之后改为 detach 版，用于两版对照实验。
++
++**原因**：
++
++1. 论文的表述指向同一方向：II-C 把 CENet 的优化目标写成 `L_CE` 本身；Fig.2 图注
++   "the shared encoder is trained to provide a robust body state and context
++   estimation jointly"；Fig.1 的 "Policy gradient" 虚线只连接 Actor 与 Critic、
++   不进 CENet；III-E 把估计精度归因于 VAE 自编码与"前向-后向动力学学习"。III-B 的
++   "synchronously train" 讲的是训练日程（单阶段、非 teacher-student 两段式），detach 下
++   三个网络仍在同一循环、同一个 Adam 里同步更新，同样满足。
++2. v̂ 有真值监督（`L_est`），又是 AdaBoot 里"需要被鲁棒对待的估计"，必须保持为诚实的
++   估计量。若策略梯度能改 v̂，它会被塑形成"策略喜欢的输入特征"，污染 `L_est`、
++   `Metrics/velocity_est_error`、`est_vel_mean_pct` 的口径与 AdaBoot 的前提。
++3. z 由重建 + KL 定义；策略梯度进 z 等于开一条不受 KL 约束的通道，β 的"信息预算"语义
++   会变糊。
++4. 本复现的 β 扫描、KL/recon 判据、latent drift/spread 判读都建立在"CENet 只被 `L_CE`
++   塑形"的假设上，detach 后这套口径更干净。
++
++**代价**（如实记录）：encoder 失去"为策略回报塑形特征"的能力，z 只能靠重建任务自己长出
++地形 context，策略侧靠 MLP + AdaBoot 消化估计误差；论文对 z/v̂ 的定位本就是估计量，
++代价可接受。
+ 
+ ## 2. 策略输入的 z_t 用采样还是后验均值
+ 
+@@ -68,13 +90,14 @@ R 是"m 个域随机化环境"的 episodic reward 向量，**每个 learning ite
+    写进 checkpoint（`adaboot_state_dict`）；加载旧 checkpoint 时打印警告并从 p_boot = 0 重来。
+ 
+ **原因**：粒度取 per-env-per-rollout 是中道选择——环境内输入来源不跳变（避免 50 Hz 抖动），
+-环境间混合让每轮都有策略梯度回传到编码器；只换 v 是因为 z 没有真值可换；mask 落盘是
+-PPO ratio 正确性的硬性要求。
++环境间混合让每个 minibatch 里都有约 p_boot 比例的样本用 v̂、其余用真值，策略在两种
++输入下都得到训练；只换 v 是因为 z 没有真值可换；mask 落盘是 PPO ratio 正确性的硬性要求。
+ 
+ ## 4. 其他已知留白（备忘，暂按默认值实现）
+ 
+ - **β（KL 权重）**：论文没给。已按"不坍缩 / 同迭代下 recon 代价可接受 / 策略指标不劣"
+-  三条判据扫描（数据与曲线见 `../实验记录.md` Run 3–6、§1.3 与 `../实验数据/figures/`）：
++  三条判据扫描（数据与曲线见 `../实验/实验记录.md` Run 3–6、§1.3 与
++  `../实验/实验数据/figures/`）：
+   β=1 与 β=0.2 都坍缩（KL≈1e-3 / 5.5e-3，recon 0.67~0.81 / 0.53）；β=0 是无正则上界
+   （KL≈90、recon 0.23）；β=0.05 在已测档位里最优（KL≈4、recon≈0.37），但按
+   "收敛值 vs 收敛值"口径它对 β=0 的重建仍差 1.57×（command / joint_pos / gravity
+diff --git a/src/mjlab/tasks/dreamwaq/rl/network/actor.py b/src/mjlab/tasks/dreamwaq/rl/network/actor.py
+index 6eb060d93..08fb53494 100644
+--- a/src/mjlab/tasks/dreamwaq/rl/network/actor.py
++++ b/src/mjlab/tasks/dreamwaq/rl/network/actor.py
+@@ -9,12 +9,13 @@ vector estimated by CENet. This module plugs CENet into rsl_rl's ``MLPModel``::
+         -> [o_t, v_hat_t, z_t] -> MLP -> action distribution
+ 
+ CENet is a submodule of the actor, so it shares the actor's parameters,
+-optimizer, state dict and export path. The policy gradient is kept in the graph
+-(no detach), so it flows into the CENet encoder in addition to the auxiliary
+-``L_CE`` loss, as decided for this reproduction. The policy consumes the
+-posterior mean ``mu_t`` (deterministic given the history), which keeps the PPO
+-importance ratio exact; the VAE branch of the auxiliary loss samples ``z_t``
+-from the posterior instead.
++optimizer, state dict and export path. The policy treats ``v_hat_t`` and ``z_t``
++as inputs, so the actor path stops the gradient (``detach``): PPO's policy
++gradient never reaches the CENet encoder, which is optimized by the auxiliary
++``L_CE`` loss alone (paper II-C: "CENet is optimized using a hybrid loss
++function"). The policy consumes the posterior mean ``mu_t`` (deterministic
++given the history), which keeps the PPO importance ratio exact; the VAE branch
++of the auxiliary loss samples ``z_t`` from the posterior instead.
+ """
+ 
+ from __future__ import annotations
+@@ -238,7 +239,11 @@ class DreamwaqActorModel(MLPModel):
+     # input stays deterministic and the PPO ratio has no resampling noise.
+     cenet_output = self.cenet(self._cenet_history(obs), sample=False)
+     self._last_cenet_output = cenet_output
+-    velocity = cenet_output.velocity
++    # Stop-gradient: the actor sees v_hat and z as inputs, so the PPO loss must
++    # not update CENet (paper II-C defines CENet's objective as L_CE alone).
++    # CENet keeps its training signal from the auxiliary losses, which read the
++    # live tensors cached above.
++    velocity = cenet_output.velocity.detach()
+     self._publish_velocity_estimate(velocity)
+     # AdaBoot (paper Eq. 8): swap the velocity estimate for the simulated
+     # ground truth wherever the AdaBoot mask says so. The mask is absent unless
+@@ -248,7 +253,7 @@ class DreamwaqActorModel(MLPModel):
+       mask = _tensor(obs, BOOT_FLAG_KEY)
+       ground_truth = _tensor(obs, self._v_target_group)
+       velocity = mask * velocity + (1.0 - mask) * ground_truth
+-    return torch.cat((proprio, velocity, cenet_output.z), dim=-1)
++    return torch.cat((proprio, velocity, cenet_output.z.detach()), dim=-1)
+ 
+   def update_normalization(self, obs: TensorDict) -> None:
+     """Update the actor and CENet observation normalization statistics."""

@@ -1,6 +1,7 @@
 """Unitree Go1 DreamWaQ environment configurations."""
 
 import math
+from dataclasses import replace
 
 from mjlab.asset_zoo.robots import GO1_ACTION_SCALE, get_go1_robot_cfg
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -22,6 +23,12 @@ from mjlab.tasks.dreamwaq import mdp
 from mjlab.tasks.dreamwaq.dreamwaq_env_cfg import make_dreamwaq_env_cfg
 from mjlab.tasks.dreamwaq.mdp import UniformVelocityCommandCfg
 
+# Paper Table II: system delay 0-15 ms. One physics substep is 5 ms, so the
+# command lag spans 0-3 substeps, resampled once per 20 ms policy step.
+GO1_COMMAND_DELAY_MIN_LAG = 0
+GO1_COMMAND_DELAY_MAX_LAG = 3
+GO1_COMMAND_DELAY_UPDATE_PERIOD = 4
+
 
 def unitree_go1_dreamwaq_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   """Create the Unitree Go1 rough-terrain DreamWaQ configuration."""
@@ -32,7 +39,26 @@ def unitree_go1_dreamwaq_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.sim.mujoco.cone = "elliptic"
   cfg.sim.contact_sensor_maxmatch = 500
 
-  cfg.scene.entities = {"robot": get_go1_robot_cfg()}
+  # The Go1 actuator configs are shared module-level objects, so make copies
+  # before attaching the command delay to keep other Go1 tasks unaffected.
+  robot_cfg = get_go1_robot_cfg()
+  assert robot_cfg.articulation is not None
+  robot_cfg = replace(
+    robot_cfg,
+    articulation=replace(
+      robot_cfg.articulation,
+      actuators=tuple(
+        replace(
+          actuator,
+          delay_min_lag=GO1_COMMAND_DELAY_MIN_LAG,
+          delay_max_lag=GO1_COMMAND_DELAY_MAX_LAG,
+          delay_update_period=GO1_COMMAND_DELAY_UPDATE_PERIOD,
+        )
+        for actuator in robot_cfg.articulation.actuators
+      ),
+    ),
+  )
+  cfg.scene.entities = {"robot": robot_cfg}
 
   # Point the terrain raycast sensor at the Go1 trunk.
   for sensor in cfg.scene.sensors or ():
@@ -165,7 +191,7 @@ def unitree_go1_dreamwaq_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       "shared_random": True,
     },
   )
-  cfg.events["base_com"].params["asset_cfg"].body_names = ("trunk",)
+  cfg.events["payload_inertia"].params["asset_cfg"].body_names = ("trunk",)
 
   cfg.rewards["pose"].params["std_standing"] = {
     r".*(FR|FL|RR|RL)_(hip|thigh)_joint.*": 0.05,

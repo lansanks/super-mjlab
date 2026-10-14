@@ -1,0 +1,6 @@
+run dir : /home/linkchen/桌面/quadruped-paper-reproduction/mjlab/logs/rsl_rl/go1_dreamwaq/2026-10-12_14-17-48
+events  : events.out.tfevents.1791785876.linkchen-Legion-R7000P-APH8.78657.0
+exported: 2026-10-12 14:58:47
+tags    : 67
+steps   : 0..599 (600 logged iterations)
+note    : metrics.csv/summary.csv 由 TensorBoard event 文件导出；run 若仍在训练，这里是快照。

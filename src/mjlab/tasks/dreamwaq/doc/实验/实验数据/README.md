@@ -15,13 +15,14 @@
 
 ```bash
 # 全部 run（会覆盖同名目录里的 CSV）
-uv run python src/mjlab/tasks/dreamwaq/doc/实验数据/export_scalars.py
+uv run python src/mjlab/tasks/dreamwaq/doc/实验/实验数据/export_scalars.py
 
 # 只导某几个
-uv run python src/mjlab/tasks/dreamwaq/doc/实验数据/export_scalars.py 2026-10-12_10-29-54
+uv run python src/mjlab/tasks/dreamwaq/doc/实验/实验数据/export_scalars.py \
+  2026-10-12_10-29-54
 
 # 重新生成 figures/ 下的跨 run 对照图
-uv run python src/mjlab/tasks/dreamwaq/doc/实验数据/plot_compare.py
+uv run python src/mjlab/tasks/dreamwaq/doc/实验/实验数据/plot_compare.py
 ```
 
 - 在仓库根目录执行；数据源是 `logs/rsl_rl/go1_dreamwaq/<run>/events.out.tfevents.*`。
@@ -30,15 +31,18 @@ uv run python src/mjlab/tasks/dreamwaq/doc/实验数据/plot_compare.py
   `logs/rsl_rl/go1_dreamwaq/<run>/`。
 - `2026-10-08_22-03-36` 是修复前的早期冒烟（1 轮、14 个 tag），仅留档，未纳入对比。
 - `figures/` 里的对照图由 `plot_compare.py` 生成，改 run 列表或迭代窗口改脚本顶部的 `RUNS` 即可。
+- CENet 梯度路径（吃/不吃 PPO 梯度）的 A/B 对照图由
+  `plot_grad_routing.py` 生成（`figures/grad_routing.png`），数据为
+  `2026-10-12_13-02-09` 与 `2026-10-12_14-17-48` 两个 run。
 
 ## 读法与画图
 
-指标口径、各 run 的平台值对照见 `../实验记录.md`（第 1.2 节与第 4 节）。最小画图示例：
+指标口径、各 run 的平台值对照见 `../实验记录.md`（第 3、4 节）。最小画图示例：
 
 ```python
 import csv, pathlib, matplotlib.pyplot as plt
 
-DATA = pathlib.Path("src/mjlab/tasks/dreamwaq/doc/实验数据")
+DATA = pathlib.Path("src/mjlab/tasks/dreamwaq/doc/实验/实验数据")
 
 
 def load(run, tag):

@@ -33,7 +33,9 @@ def unitree_go1_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
       num_learning_epochs=5,
       num_mini_batches=4,
       learning_rate=1.0e-3,
-      schedule="adaptive",
+      # Match the DreamWaQ Go1 runs (and the paper's fixed Adam lr) so the
+      # baseline differs only in CENet/AdaBoot. adaptive
+      schedule="fixed",
       gamma=0.99,
       lam=0.95,
       desired_kl=0.01,

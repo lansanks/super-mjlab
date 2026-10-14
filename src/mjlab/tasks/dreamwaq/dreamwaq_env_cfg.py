@@ -302,17 +302,38 @@ def make_dreamwaq_env_cfg() -> ManagerBasedRlEnvCfg:
         "bias_range": (-0.015, 0.015),
       },
     ),
-    "base_com": EventTermCfg(
+    # Paper Table II: payload [-1, 2] kg and COM shift [-50, 50] mm. The two
+    # are randomized jointly so mass, COM, and inertia always describe one
+    # consistent rigid body (payload inertia via the parallel-axis theorem).
+    "payload_inertia": EventTermCfg(
       mode="startup",
-      func=dr.body_com_offset,
+      func=dr.body_payload,
       params={
         "asset_cfg": SceneEntityCfg("robot", body_names=()),  # Set per-robot.
-        "operation": "add",
-        "ranges": {
-          0: (-0.025, 0.025),
-          1: (-0.025, 0.025),
-          2: (-0.03, 0.03),
-        },
+        "mass_range": (-1.0, 2.0),
+        "mount_offset": (0.0, 0.0, 0.06),  # Payload sits above the body COM.
+        "com_shift_range": (-0.05, 0.05),
+      },
+    ),
+    # Paper Table II: Kp and Kd factors [0.9, 1.1] (multiplicative).
+    "pd_gains": EventTermCfg(
+      mode="startup",
+      func=dr.pd_gains,
+      params={
+        "asset_cfg": SceneEntityCfg("robot"),
+        "operation": "scale",
+        "kp_range": (0.9, 1.1),
+        "kd_range": (0.9, 1.1),
+      },
+    ),
+    # Paper Table II: motor strength factor [0.9, 1.1] (effort limit scale).
+    "motor_strength": EventTermCfg(
+      mode="startup",
+      func=dr.effort_limits,
+      params={
+        "asset_cfg": SceneEntityCfg("robot"),
+        "operation": "scale",
+        "effort_limit_range": (0.9, 1.1),
       },
     ),
   }

@@ -48,7 +48,7 @@ def unitree_go1_dreamwaq_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
       learning_rate=1.0e-3,
       # The paper uses a fixed Adam learning rate for all networks; the
       # adaptive schedule would also rescale CENet's learning rate.
-      schedule="fixed",
+      schedule="adaptive",
       gamma=0.99,
       lam=0.95,
       desired_kl=0.01,
@@ -58,7 +58,7 @@ def unitree_go1_dreamwaq_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
       # AdaBoot (paper Eq. 8): p_boot = 1 - tanh(CV(R)) decides how often the
       # policy sees the CENet estimate instead of the ground-truth velocity.
       dreamwaq_cfg={
-        "beta": 0.0,
+        "beta": 0.04,
         "ce_coef": 1.0,
         "adaboot": True,
         "boot_granularity": "env",

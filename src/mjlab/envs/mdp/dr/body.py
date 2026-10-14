@@ -12,6 +12,7 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.utils.lab_api.math import (
   matrix_from_quat,
   quat_from_matrix,
+  sample_uniform,
 )
 
 from ._core import (
@@ -323,6 +324,102 @@ def body_mass(
     axes=axes,
     shared_random=shared_random,
   )
+
+
+@requires_model_fields(
+  "body_mass",
+  "body_ipos",
+  "body_inertia",
+  "body_iquat",
+  recompute=RecomputeLevel.set_const,
+)
+def body_payload(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor | None,
+  mass_range: tuple[float, float],
+  mount_offset: tuple[float, float, float],
+  com_shift_range: tuple[float, float] = (0.0, 0.0),
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> None:
+  """Attach a point-mass payload, keeping mass, COM, and inertia consistent.
+
+  Unlike :func:`body_mass`, which changes mass while leaving the inertia tensor
+  untouched, this function adds a (possibly negative) point mass at
+  ``mount_offset`` in the body frame and recomputes the full rigid-body inertia
+  through the parallel-axis theorem, then decomposes it back to the MuJoCo
+  fields (``body_mass``, ``body_ipos``, ``body_inertia``, ``body_iquat``). The
+  result is exact for any payload magnitude as long as the total mass stays
+  positive, and models a payload bolted to the body far more faithfully than a
+  mass-only change.
+
+  ``com_shift_range`` additionally shifts the COM without changing the inertia
+  about the COM, matching :func:`body_com_offset` semantics. Combine the two
+  here instead of stacking a separate ``body_com_offset`` event: both write
+  ``body_ipos``, and the last event to run would clobber the other's COM.
+
+  Bodies with zero default mass keep their defaults.
+  Triggers ``set_const`` recomputation.
+
+  Args:
+    env: The environment.
+    env_ids: Environment indices to randomize. If None, randomizes all.
+    mass_range: (min, max) added payload mass in kg. May be negative.
+    mount_offset: Payload position in the body frame, in meters.
+    com_shift_range: (min, max) per-axis COM shift in meters.
+    asset_cfg: Asset and body selection.
+  """
+  asset = env.scene[asset_cfg.name]
+  if env_ids is None:
+    env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
+  else:
+    env_ids = env_ids.to(env.device, dtype=torch.int)
+
+  entity_indices = _get_entity_indices(asset.indexing, asset_cfg, "body", False)
+  n_envs = env_ids.numel()
+  n_bodies = entity_indices.numel()
+  if n_bodies == 0:
+    return
+
+  mass0 = _select_default_values(env, "body_mass", env_ids, entity_indices)
+  ipos0 = _select_default_values(env, "body_ipos", env_ids, entity_indices)
+  inertia0 = _select_default_values(env, "body_inertia", env_ids, entity_indices)
+  iquat0 = _select_default_values(env, "body_iquat", env_ids, entity_indices)
+
+  shape = (n_envs, n_bodies)
+  dm = sample_uniform(mass_range[0], mass_range[1], shape, env.device).to(mass0.dtype)
+  mount = (
+    torch.tensor(mount_offset, dtype=mass0.dtype, device=env.device)
+    .reshape(1, 1, 3)
+    .expand(n_envs, n_bodies, 3)
+  )
+  dshift = sample_uniform(
+    com_shift_range[0], com_shift_range[1], shape + (3,), env.device
+  ).to(mass0.dtype)
+
+  # Pseudo-inertia of a point mass dm at r is [[dm * r r^T, dm * r],
+  # [dm * r^T, dm]]; summing it with the body's pseudo-inertia adds the payload
+  # exactly (mass, first, and second moments all update consistently).
+  J = _reconstruct_pseudo_inertia_J(mass0, ipos0, inertia0, iquat0)
+  outer = mount.unsqueeze(-1) * mount.unsqueeze(-2)
+  dm_b = dm.unsqueeze(-1)
+  J[..., :3, :3] += dm_b.unsqueeze(-1) * outer
+  J[..., :3, 3] += dm_b * mount
+  J[..., 3, :3] += dm_b * mount
+  J[..., 3, 3] += dm
+
+  mass1, ipos1, inertia1, iquat1 = _decompose_pseudo_inertia_J(J)
+
+  valid = (mass0 > 0.0) & (mass1 > 0.0)
+  mass1 = torch.where(valid, mass1, mass0)
+  ipos1 = torch.where(valid.unsqueeze(-1), ipos1 + dshift, ipos0)
+  inertia1 = torch.where(valid.unsqueeze(-1), inertia1, inertia0)
+  iquat1 = torch.where(valid.unsqueeze(-1), iquat1, iquat0)
+
+  env_grid, entity_grid = torch.meshgrid(env_ids, entity_indices, indexing="ij")
+  env.sim.model.body_mass[env_grid, entity_grid] = mass1
+  env.sim.model.body_ipos[env_grid, entity_grid] = ipos1
+  env.sim.model.body_inertia[env_grid, entity_grid] = inertia1
+  env.sim.model.body_iquat[env_grid, entity_grid] = iquat1
 
 
 @requires_model_fields("body_ipos", recompute=RecomputeLevel.set_const)

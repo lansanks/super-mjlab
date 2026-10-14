@@ -53,6 +53,20 @@ Added
 Changed
 ^^^^^^^
 
+- Aligned DreamWaQ's Go1 domain randomization with the paper's Table II:
+  payload mass (with exact parallel-axis inertia) and the center-of-mass shift
+  are now randomized together through the new ``body_payload`` function, Kp/Kd
+  gain factors and motor strength factors are randomized per environment, and
+  the actuators get a 0-15 ms command delay. Previously payload, gain, motor
+  strength, and delay randomization were missing and the COM shift was narrower
+  than the paper.
+
+- DreamWaQ's CENet is now optimized by its auxiliary loss alone: the actor
+  detaches ``v_hat_t`` and ``z_t`` before they enter the policy, so the PPO
+  gradient no longer reaches the CENet encoder. The auxiliary loss still feeds
+  the same backward pass, so the policy, value and CENet networks keep training
+  synchronously with a single optimizer.
+
 - ``get_base_metadata`` accepts an optional ``obs_group`` argument (defaults to
   ``"actor"``) so tasks whose policy input is an observation history can
   describe the group the exported model actually consumes.

@@ -283,7 +283,7 @@ def unitree_go1_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.scene.sensors = tuple(
     s for s in (cfg.scene.sensors or ()) if s.name not in remove_sensors
   )
-  del cfg.observations["actor"].terms["height_scan"]
+  cfg.observations["actor"].terms.pop("height_scan", None)
   del cfg.observations["critic"].terms["height_scan"]
   cfg.rewards["upright"].params.pop("terrain_sensor_names", None)
 

@@ -1042,6 +1042,98 @@ def test_pseudo_inertia_rejects_log_uniform(inertia_env):
     dr.pseudo_inertia(inertia_env, None, distribution="log_uniform")
 
 
+def test_body_payload_adds_parallel_axis_inertia(inertia_env):
+  """Payload mass plus its mount-point inertia matches the exact J sum."""
+  env = inertia_env
+  robot = env.scene["robot"]
+  body_cfg = SceneEntityCfg("robot", body_names=("base",))
+  body_cfg.resolve(env.scene)
+  body_ids = robot.indexing.body_ids[body_cfg.body_ids]
+
+  dm = 0.5
+  mount = (0.05, -0.02, 0.2)
+  dr.body_payload(
+    env,
+    env_ids=None,
+    mass_range=(dm, dm),
+    mount_offset=mount,
+    com_shift_range=(0.0, 0.0),
+    asset_cfg=body_cfg,
+  )
+
+  mass = env.sim.model.body_mass[:, body_ids]
+  ipos = env.sim.model.body_ipos[:, body_ids, :]
+  inertia = env.sim.model.body_inertia[:, body_ids, :]
+  iquat = env.sim.model.body_iquat[:, body_ids, :]
+
+  def_mass = env.sim.get_default_field("body_mass")[body_ids].expand(env.num_envs, -1)
+  def_ipos = env.sim.get_default_field("body_ipos")[body_ids, :].expand(
+    env.num_envs, -1, -1
+  )
+  def_inertia = env.sim.get_default_field("body_inertia")[body_ids, :].expand(
+    env.num_envs, -1, -1
+  )
+  def_iquat = env.sim.get_default_field("body_iquat")[body_ids, :].expand(
+    env.num_envs, -1, -1
+  )
+  torch.testing.assert_close(mass, def_mass + dm)
+
+  J_expected = _reconstruct_J(def_mass, def_ipos, def_inertia, def_iquat)
+  r = torch.tensor(mount, dtype=J_expected.dtype, device=J_expected.device)
+  r = r.reshape(1, 1, 3).expand(env.num_envs, 1, 3)
+  outer = r.unsqueeze(-1) * r.unsqueeze(-2)
+  J_expected[..., :3, :3] += dm * outer
+  J_expected[..., :3, 3] += dm * r
+  J_expected[..., 3, :3] += dm * r
+  J_expected[..., 3, 3] += dm
+
+  J_actual = _reconstruct_J(mass, ipos, inertia, iquat)
+  torch.testing.assert_close(J_actual, J_expected)
+
+  # The COM must land on the mass-weighted point-mass solution.
+  ipos_expected = (def_mass.unsqueeze(-1) * def_ipos + dm * r) / (
+    def_mass + dm
+  ).unsqueeze(-1)
+  torch.testing.assert_close(ipos, ipos_expected)
+
+
+def test_body_payload_com_shift_keeps_inertia(inertia_env):
+  """com_shift_range moves body_ipos and leaves the inertia about the COM."""
+  env = inertia_env
+  robot = env.scene["robot"]
+  body_cfg = SceneEntityCfg("robot", body_names=("base",))
+  body_cfg.resolve(env.scene)
+  body_ids = robot.indexing.body_ids[body_cfg.body_ids]
+
+  dr.body_payload(
+    env,
+    env_ids=None,
+    mass_range=(0.5, 0.5),
+    mount_offset=(0.0, 0.0, 0.2),
+    com_shift_range=(0.0, 0.0),
+    asset_cfg=body_cfg,
+  )
+  ipos_before = env.sim.model.body_ipos[:, body_ids, :].clone()
+  inertia_before = env.sim.model.body_inertia[:, body_ids, :].clone()
+  iquat_before = env.sim.model.body_iquat[:, body_ids, :].clone()
+
+  shift = 0.03
+  dr.body_payload(
+    env,
+    env_ids=None,
+    mass_range=(0.5, 0.5),
+    mount_offset=(0.0, 0.0, 0.2),
+    com_shift_range=(shift, shift),
+    asset_cfg=body_cfg,
+  )
+
+  torch.testing.assert_close(
+    env.sim.model.body_ipos[:, body_ids, :], ipos_before + shift
+  )
+  torch.testing.assert_close(env.sim.model.body_inertia[:, body_ids, :], inertia_before)
+  torch.testing.assert_close(env.sim.model.body_iquat[:, body_ids, :], iquat_before)
+
+
 def test_eigh_3x3_jacobi_equal_diagonal():
   """Equal diagonal entries with nonzero coupling still need a rotation."""
   A = torch.tensor([[2.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 3.0]])

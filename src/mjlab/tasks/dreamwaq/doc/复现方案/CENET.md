@@ -3,7 +3,7 @@
 > 本文只描述"怎么改"，不含任何代码改动。
 > 依据只有两处：论文 `src/mjlab/tasks/dreamwaq/doc/dreamwaq.pdf` 和当前仓库代码。
 > 当前仓库的 actor 观测组（45 维）和 critic 观测组（特权观测）保持现状，不要求与论文完全一致。
-> 各轮训练的实验数据、曲线读数与阶段性结论见 `../实验记录.md`。
+> 各轮训练的实验数据、曲线读数与阶段性结论见 `../实验/实验记录.md`。
 
 ---
 
@@ -25,7 +25,7 @@
 **CENet 不做成一个单独训练的模块，而是直接挂在 Actor 模型内部**：
 
 - 每个 control step，Actor 前向时顺带跑一遍 CENet 编码器，拿到 `v̂` 和 `z`，拼成 `[o_t, v̂, z]` 再进 MLP 出动作；
-- 训练时 CENet 沿 PPO 一起更新：策略梯度经过 `[o_t, v̂, z]` 回传到编码器（v̂、z 不 detach），辅助损失 `L_CE = L_est + L_VAE` 与 PPO 的损失相加后一次 backward、同一个优化器更新（论文未直接说明梯度路径，这是本复现的实现选择，见 4.2）；
+- 训练时 CENet 只由辅助损失更新：actor 路径上的 v̂、z **detach**，PPO 的梯度不进入编码器；辅助损失 `L_CE = L_est + L_VAE` 与 PPO 的损失相加后仍是一次 backward、同一个优化器更新（论文未直接说明梯度路径，这是本复现的实现选择，见 4.2）；
 - 因为 CENet 是 Actor 的子模块，它天然被同一个 Adam 优化器、同一份 `actor_state_dict`、同一个 ONNX 导出覆盖，不需要给 rsl_rl 动存储结构、也不需要第二套优化器。
 
 ---
@@ -66,6 +66,10 @@
    │        一次 backward → 一个 Adam 更新（actor + CENet + critic 全在一起）       │
    └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+> 梯度路径（2026-10-12 起）：PPO 损失只更新策略 MLP 与 critic；CENet（编码器 + 两个
+> 后验/速度头 + 解码器）只由 `L_CE` 更新——actor 路径上的 v̂、z 已 detach，对策略来说是常数。
+> 详见 4.2 与《论文未明确之处.md》第 1 条。
 
 ---
 
@@ -115,9 +119,9 @@
 
 推理/导出接口建议：**输入 270 维历史 → 内部取最新一帧当 o_t → 输出 12 维动作均值**。部署端只需要维护一个 45 维 × 6 帧的 ring buffer。
 
-一个重要细节（本复现已拍板）：**v̂、z 不 detach，CENet 沿 PPO 一起更新**。策略梯度会经过 `[o_t, v̂, z]` 回传到编码器；`L_CE` 与 PPO 损失相加后一次 backward、同一个优化器更新，编码器同时服务"估计准"和"策略回报"两个目标（端到端）。
+一个重要细节（2026-10-12 起拍板，此前为耦合版）：**v̂、z 在 actor 路径上 detach，CENet 只由 `L_CE` 更新**。编码器不接收策略梯度，只服务"估计准"这一个目标；`L_CE` 与 PPO 损失相加后仍是同一次 backward、同一个 Adam 更新（单阶段"同步训练"不变）。实现上 `.detach()` 只加在送进策略的那一份上，缓存给辅助损失的 `_last_cenet_output` 保留计算图——两侧共用同一次 CENet 前向。
 
-需要如实标注的是：论文对"策略梯度是否回传编码器"没有任何直接表述——II-C 只说 CENet 由 `L_CE` 优化，III-B 只说三个网络同步训练。因此"一起更新"是本复现的实现选择，不是论文结论；按此实现即可，不再做 detach 开关或 A/B。
+需要如实标注的是：论文对"策略梯度是否回传编码器"没有任何直接表述——II-C 只写 CENet 由 `L_CE` 优化，III-B 只说三个网络同步训练；但 Fig.1 的 "Policy gradient" 虚线只连接 Actor 与 Critic，Fig.2 图注把共享编码器的职责写成"联合提供估计"（estimation jointly），III-E 把估计精度归因于 VAE 自编码。因此 detach 是"论文文本支持、但非论文明文"的实现选择（证据与理由见《论文未明确之处.md》第 1 条）。实现上写死，不做运行时开关；两版对照靠 git 历史（`4dfa594e0` 为分界）与各自的 run。
 
 ---
 
@@ -251,7 +255,7 @@ compute_returns 末尾：用本轮结算的 episode return 更新 p_boot（下�
 2. **done 步的"下一帧"是 reset 后的观测**：重建项要 mask 掉，否则 decoder 会被要求去重建一个不相干的帧。
 3. **history 顺序**：mjlab 给的是旧 → 新 `[o_{t-5}, ..., o_t]`，论文写的是新 → 旧 `[o_t, ..., o_{t-5}]`。在模型里 flip 一次即可，选择一种后写死，不要前后不一致。
 4. **归一化**：不做归一化就套 N(0,I) 先验，KL 会变成一个尺度错位的正则项，训练会变得不可控（论文原话就是为了这个才归一化）。
-5. **v̂、z 不 detach（已定）**：CENet 沿 PPO 一起更新，PPO 梯度经 `[o_t, v̂, z]` 回传编码器，`L_CE` 与 PPO 损失相加后一次 backward、同一个优化器。论文没有直接说明这一点（属本复现的实现选择），但实现上不要再加 detach、也不要拆成两套优化器。
+5. **v̂、z 必须 detach（已定，2026-10-12 起）**：actor 路径上的 v̂、z 加 `.detach()`，CENet 只由 `L_CE` 更新；辅助损失必须读 `_last_cenet_output` 里未 detach 的图（若把缓存也 detach，CENet 就完全学不到东西）。论文没有直接说明这一点（属本复现的实现选择，理由见《论文未明确之处.md》第 1 条），但不要拆成两套优化器——同一个 Adam 才符合论文"同步训练"的口径。
 6. **ONNX 导出**：默认的 `as_onnx()` 只吃 45 维 actor 观测，会导出一个完全不包含 CENet 的模型；必须覆写，导出输入是 270 维历史、输出 12 维动作，并且经 play 环境验证一遍。
 7. **优化器与学习率**：CENet 参数在 actor 内，自动共用 PPO 的优化器；论文是全网络固定 Adam 1e-3，而 mjlab 默认 `schedule="adaptive"` 会连 CENet 的学习率一起调整，想严格对齐就把 schedule 设为 `fixed`。
 8. **旧 checkpoint 不兼容**：actor 的 state_dict 会多出 `cenet.*` 的键，旧模型无法 strict 加载，需要从头训。
@@ -276,11 +280,11 @@ compute_returns 末尾：用本轮结算的 episode return 更新 p_boot（下�
 
 | 项 | 建议默认 | 说明 |
 | --- | --- | --- |
-| β（KL 权重） | 1.0 | β-VAE，论文未给取值 |
+| β（KL 权重） | **0.045**（目标 KL≈5 nat） | β-VAE，论文未给；按 `β≈0.23/KL` 标定，依据见《实验记录.md》第 8 节 |
 | λ（L_CE 相对 PPO 的权重） | 1.0 | 论文未给；影响辅助损失和策略损失的量级平衡 |
 | L_est 单独权重 | 1.0 | 与重建项同量级；速度单位是 m/s，量级约 O(1)，可后续再调 |
 | z 的用法 | 策略用 μ；VAE 重建采样 z；推理 μ | 见《论文未明确之处.md》第 2 条 |
-| 策略梯度是否回传 CENet | 回传（不 detach，已定） | 论文未直接说明；本复现选择端到端一起更新 |
+| 策略梯度是否回传 CENet | 不回传（detach，已定） | 论文未明文；II-C 把 CENet 目标写成 `L_CE` 本身、Fig.1 的 policy gradient 不进 CENet（见《论文未明确之处.md》第 1 条） |
 | AdaBoot 的 R 口径 | 每环境最近一次已完成 episode 的 return | 论文只说"episodic reward over m environments" |
 | AdaBoot 掷骰粒度 | 每环境每次 rollout 一次（可切整轮一次） | 论文只说"per learning iteration" |
 | AdaBoot 替换范围 | 只换 v，z 恒用 μ | z 没有真值可换 |
@@ -294,7 +298,7 @@ compute_returns 末尾：用本轮结算的 episode return 更新 p_boot（下�
 ## 9. 验证步骤
 
 1. **静态检查**：`make check`（format + lint + type），维度断言写进模型构造函数（270、35、45、64）。
-2. **不跑仿真的单测**：用假 obs TensorDict 构造模型和算法 —— 检查前向形状、`L_est/L_rec/L_kl` 可反向且 encoder 有梯度、移位逻辑（手工造 T=3 的序列验证目标对齐）、done mask 生效。
+2. **不跑仿真的单测**：用假 obs TensorDict 构造模型和算法 —— 检查前向形状、`L_est/L_rec/L_kl` 可反向且 encoder 有梯度、**策略损失不给 encoder 梯度**（`tests/test_dreamwaq_gradient_routing.py`）、移位逻辑（手工造 T=3 的序列验证目标对齐）、done mask 生效。
 3. **小规模冒烟训练**：小 env 数跑 2 次迭代，确认 loss_dict 出现 `cenet_est / cenet_recon / cenet_kl` 且数值有限、v̂ 的误差在下降。
 4. **导出验证**：导出 ONNX，确认输入 270、输出 12，并在 play 环境跑通推理。
 5. **回归**：确认没有动到公共代码；若改了 `src/mjlab/rl/config.py` 等公共文件，跑一遍 velocity 任务相关单测。

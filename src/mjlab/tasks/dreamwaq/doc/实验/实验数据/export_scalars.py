@@ -2,7 +2,8 @@
 
 Usage (from the repository root)::
 
-    uv run python src/mjlab/tasks/dreamwaq/doc/实验数据/export_scalars.py [RUN ...]
+    uv run python src/mjlab/tasks/dreamwaq/doc/实验/实验数据/export_scalars.py \
+      [RUN ...]
 
 Without arguments every run under ``logs/rsl_rl/go1_dreamwaq/`` is exported to
 ``<run>/`` next to this script:

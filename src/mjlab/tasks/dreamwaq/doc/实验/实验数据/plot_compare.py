@@ -2,7 +2,7 @@
 
 Usage (from the repository root)::
 
-    uv run python src/mjlab/tasks/dreamwaq/doc/实验数据/plot_compare.py
+    uv run python src/mjlab/tasks/dreamwaq/doc/实验/实验数据/plot_compare.py
 
 Writes PNGs into ``figures/`` next to this script:
 

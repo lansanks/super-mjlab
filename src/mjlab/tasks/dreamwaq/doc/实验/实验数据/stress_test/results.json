@@ -1,0 +1,569 @@
+[
+ {
+  "level": 3,
+  "condition": "clean",
+  "policy": "A_cpl_b0",
+  "falls": 8,
+  "falls_per_env_20s": 0.031,
+  "reward_per_step": 0.095,
+  "wall_s": 16.9
+ },
+ {
+  "level": 3,
+  "condition": "clean",
+  "policy": "B_det_b0",
+  "falls": 10,
+  "falls_per_env_20s": 0.039,
+  "reward_per_step": 0.094,
+  "wall_s": 16.7
+ },
+ {
+  "level": 3,
+  "condition": "clean",
+  "policy": "C_det_b01",
+  "falls": 9,
+  "falls_per_env_20s": 0.035,
+  "reward_per_step": 0.094,
+  "wall_s": 16.8
+ },
+ {
+  "level": 3,
+  "condition": "clean",
+  "policy": "D_det_b004",
+  "falls": 13,
+  "falls_per_env_20s": 0.051,
+  "reward_per_step": 0.094,
+  "wall_s": 16.7
+ },
+ {
+  "level": 3,
+  "condition": "clean",
+  "policy": "vel_baseline",
+  "falls": 9,
+  "falls_per_env_20s": 0.035,
+  "reward_per_step": 0.095,
+  "wall_s": 16.4
+ },
+ {
+  "level": 3,
+  "condition": "noise2x",
+  "policy": "A_cpl_b0",
+  "falls": 8,
+  "falls_per_env_20s": 0.031,
+  "reward_per_step": 0.09,
+  "wall_s": 17.7
+ },
+ {
+  "level": 3,
+  "condition": "noise2x",
+  "policy": "B_det_b0",
+  "falls": 8,
+  "falls_per_env_20s": 0.031,
+  "reward_per_step": 0.089,
+  "wall_s": 17.3
+ },
+ {
+  "level": 3,
+  "condition": "noise2x",
+  "policy": "C_det_b01",
+  "falls": 12,
+  "falls_per_env_20s": 0.047,
+  "reward_per_step": 0.087,
+  "wall_s": 17.5
+ },
+ {
+  "level": 3,
+  "condition": "noise2x",
+  "policy": "D_det_b004",
+  "falls": 8,
+  "falls_per_env_20s": 0.031,
+  "reward_per_step": 0.088,
+  "wall_s": 17.4
+ },
+ {
+  "level": 3,
+  "condition": "noise2x",
+  "policy": "vel_baseline",
+  "falls": 9,
+  "falls_per_env_20s": 0.035,
+  "reward_per_step": 0.086,
+  "wall_s": 16.9
+ },
+ {
+  "level": 3,
+  "condition": "noise2x_bias3x",
+  "policy": "A_cpl_b0",
+  "falls": 10,
+  "falls_per_env_20s": 0.039,
+  "reward_per_step": 0.09,
+  "wall_s": 17.8
+ },
+ {
+  "level": 3,
+  "condition": "noise2x_bias3x",
+  "policy": "B_det_b0",
+  "falls": 5,
+  "falls_per_env_20s": 0.02,
+  "reward_per_step": 0.089,
+  "wall_s": 17.4
+ },
+ {
+  "level": 3,
+  "condition": "noise2x_bias3x",
+  "policy": "C_det_b01",
+  "falls": 4,
+  "falls_per_env_20s": 0.016,
+  "reward_per_step": 0.087,
+  "wall_s": 17.5
+ },
+ {
+  "level": 3,
+  "condition": "noise2x_bias3x",
+  "policy": "D_det_b004",
+  "falls": 6,
+  "falls_per_env_20s": 0.023,
+  "reward_per_step": 0.088,
+  "wall_s": 17.5
+ },
+ {
+  "level": 3,
+  "condition": "noise2x_bias3x",
+  "policy": "vel_baseline",
+  "falls": 9,
+  "falls_per_env_20s": 0.035,
+  "reward_per_step": 0.085,
+  "wall_s": 17.0
+ },
+ {
+  "level": 3,
+  "condition": "noise4x",
+  "policy": "A_cpl_b0",
+  "falls": 15,
+  "falls_per_env_20s": 0.059,
+  "reward_per_step": 0.078,
+  "wall_s": 17.9
+ },
+ {
+  "level": 3,
+  "condition": "noise4x",
+  "policy": "B_det_b0",
+  "falls": 6,
+  "falls_per_env_20s": 0.023,
+  "reward_per_step": 0.076,
+  "wall_s": 17.4
+ },
+ {
+  "level": 3,
+  "condition": "noise4x",
+  "policy": "C_det_b01",
+  "falls": 6,
+  "falls_per_env_20s": 0.023,
+  "reward_per_step": 0.07,
+  "wall_s": 17.6
+ },
+ {
+  "level": 3,
+  "condition": "noise4x",
+  "policy": "D_det_b004",
+  "falls": 16,
+  "falls_per_env_20s": 0.062,
+  "reward_per_step": 0.073,
+  "wall_s": 17.6
+ },
+ {
+  "level": 3,
+  "condition": "noise4x",
+  "policy": "vel_baseline",
+  "falls": 14,
+  "falls_per_env_20s": 0.055,
+  "reward_per_step": 0.065,
+  "wall_s": 17.0
+ },
+ {
+  "level": 3,
+  "condition": "noise4x_bias8x",
+  "policy": "A_cpl_b0",
+  "falls": 30,
+  "falls_per_env_20s": 0.117,
+  "reward_per_step": 0.074,
+  "wall_s": 17.8
+ },
+ {
+  "level": 3,
+  "condition": "noise4x_bias8x",
+  "policy": "B_det_b0",
+  "falls": 20,
+  "falls_per_env_20s": 0.078,
+  "reward_per_step": 0.073,
+  "wall_s": 17.5
+ },
+ {
+  "level": 3,
+  "condition": "noise4x_bias8x",
+  "policy": "C_det_b01",
+  "falls": 31,
+  "falls_per_env_20s": 0.121,
+  "reward_per_step": 0.067,
+  "wall_s": 17.7
+ },
+ {
+  "level": 3,
+  "condition": "noise4x_bias8x",
+  "policy": "D_det_b004",
+  "falls": 37,
+  "falls_per_env_20s": 0.145,
+  "reward_per_step": 0.069,
+  "wall_s": 17.9
+ },
+ {
+  "level": 3,
+  "condition": "noise4x_bias8x",
+  "policy": "vel_baseline",
+  "falls": 28,
+  "falls_per_env_20s": 0.109,
+  "reward_per_step": 0.062,
+  "wall_s": 17.1
+ },
+ {
+  "level": 3,
+  "condition": "push1x",
+  "policy": "A_cpl_b0",
+  "falls": 18,
+  "falls_per_env_20s": 0.07,
+  "reward_per_step": 0.091,
+  "wall_s": 16.8
+ },
+ {
+  "level": 3,
+  "condition": "push1x",
+  "policy": "B_det_b0",
+  "falls": 13,
+  "falls_per_env_20s": 0.051,
+  "reward_per_step": 0.09,
+  "wall_s": 16.7
+ },
+ {
+  "level": 3,
+  "condition": "push1x",
+  "policy": "C_det_b01",
+  "falls": 17,
+  "falls_per_env_20s": 0.066,
+  "reward_per_step": 0.09,
+  "wall_s": 16.7
+ },
+ {
+  "level": 3,
+  "condition": "push1x",
+  "policy": "D_det_b004",
+  "falls": 18,
+  "falls_per_env_20s": 0.07,
+  "reward_per_step": 0.091,
+  "wall_s": 16.7
+ },
+ {
+  "level": 3,
+  "condition": "push1x",
+  "policy": "vel_baseline",
+  "falls": 13,
+  "falls_per_env_20s": 0.051,
+  "reward_per_step": 0.09,
+  "wall_s": 16.2
+ },
+ {
+  "level": 3,
+  "condition": "push2x",
+  "policy": "A_cpl_b0",
+  "falls": 64,
+  "falls_per_env_20s": 0.25,
+  "reward_per_step": 0.081,
+  "wall_s": 17.0
+ },
+ {
+  "level": 3,
+  "condition": "push2x",
+  "policy": "B_det_b0",
+  "falls": 55,
+  "falls_per_env_20s": 0.215,
+  "reward_per_step": 0.079,
+  "wall_s": 16.8
+ },
+ {
+  "level": 3,
+  "condition": "push2x",
+  "policy": "C_det_b01",
+  "falls": 64,
+  "falls_per_env_20s": 0.25,
+  "reward_per_step": 0.08,
+  "wall_s": 16.9
+ },
+ {
+  "level": 3,
+  "condition": "push2x",
+  "policy": "D_det_b004",
+  "falls": 53,
+  "falls_per_env_20s": 0.207,
+  "reward_per_step": 0.08,
+  "wall_s": 17.0
+ },
+ {
+  "level": 3,
+  "condition": "push2x",
+  "policy": "vel_baseline",
+  "falls": 42,
+  "falls_per_env_20s": 0.164,
+  "reward_per_step": 0.08,
+  "wall_s": 16.6
+ },
+ {
+  "level": 3,
+  "condition": "push2x_noise2x",
+  "policy": "A_cpl_b0",
+  "falls": 59,
+  "falls_per_env_20s": 0.23,
+  "reward_per_step": 0.077,
+  "wall_s": 17.6
+ },
+ {
+  "level": 3,
+  "condition": "push2x_noise2x",
+  "policy": "B_det_b0",
+  "falls": 52,
+  "falls_per_env_20s": 0.203,
+  "reward_per_step": 0.074,
+  "wall_s": 17.5
+ },
+ {
+  "level": 3,
+  "condition": "push2x_noise2x",
+  "policy": "C_det_b01",
+  "falls": 53,
+  "falls_per_env_20s": 0.207,
+  "reward_per_step": 0.074,
+  "wall_s": 17.6
+ },
+ {
+  "level": 3,
+  "condition": "push2x_noise2x",
+  "policy": "D_det_b004",
+  "falls": 59,
+  "falls_per_env_20s": 0.23,
+  "reward_per_step": 0.074,
+  "wall_s": 17.6
+ },
+ {
+  "level": 3,
+  "condition": "push2x_noise2x",
+  "policy": "vel_baseline",
+  "falls": 50,
+  "falls_per_env_20s": 0.195,
+  "reward_per_step": 0.072,
+  "wall_s": 17.0
+ },
+ {
+  "level": 3,
+  "condition": "push2x_noise4x",
+  "policy": "A_cpl_b0",
+  "falls": 98,
+  "falls_per_env_20s": 0.383,
+  "reward_per_step": 0.064,
+  "wall_s": 17.9
+ },
+ {
+  "level": 3,
+  "condition": "push2x_noise4x",
+  "policy": "B_det_b0",
+  "falls": 77,
+  "falls_per_env_20s": 0.301,
+  "reward_per_step": 0.063,
+  "wall_s": 17.7
+ },
+ {
+  "level": 3,
+  "condition": "push2x_noise4x",
+  "policy": "C_det_b01",
+  "falls": 98,
+  "falls_per_env_20s": 0.383,
+  "reward_per_step": 0.058,
+  "wall_s": 17.8
+ },
+ {
+  "level": 3,
+  "condition": "push2x_noise4x",
+  "policy": "D_det_b004",
+  "falls": 87,
+  "falls_per_env_20s": 0.34,
+  "reward_per_step": 0.059,
+  "wall_s": 17.9
+ },
+ {
+  "level": 3,
+  "condition": "push2x_noise4x",
+  "policy": "vel_baseline",
+  "falls": 114,
+  "falls_per_env_20s": 0.445,
+  "reward_per_step": 0.052,
+  "wall_s": 17.3
+ },
+ {
+  "level": 3,
+  "condition": "push3x",
+  "policy": "A_cpl_b0",
+  "falls": 343,
+  "falls_per_env_20s": 1.34,
+  "reward_per_step": 0.067,
+  "wall_s": 18.0
+ },
+ {
+  "level": 3,
+  "condition": "push3x",
+  "policy": "B_det_b0",
+  "falls": 308,
+  "falls_per_env_20s": 1.203,
+  "reward_per_step": 0.065,
+  "wall_s": 17.6
+ },
+ {
+  "level": 3,
+  "condition": "push3x",
+  "policy": "C_det_b01",
+  "falls": 288,
+  "falls_per_env_20s": 1.125,
+  "reward_per_step": 0.067,
+  "wall_s": 17.5
+ },
+ {
+  "level": 3,
+  "condition": "push3x",
+  "policy": "D_det_b004",
+  "falls": 264,
+  "falls_per_env_20s": 1.031,
+  "reward_per_step": 0.068,
+  "wall_s": 17.9
+ },
+ {
+  "level": 3,
+  "condition": "push3x",
+  "policy": "vel_baseline",
+  "falls": 248,
+  "falls_per_env_20s": 0.969,
+  "reward_per_step": 0.067,
+  "wall_s": 17.0
+ },
+ {
+  "level": 3,
+  "condition": "push4x",
+  "policy": "A_cpl_b0",
+  "falls": 1001,
+  "falls_per_env_20s": 3.91,
+  "reward_per_step": 0.054,
+  "wall_s": 18.8
+ },
+ {
+  "level": 3,
+  "condition": "push4x",
+  "policy": "B_det_b0",
+  "falls": 910,
+  "falls_per_env_20s": 3.555,
+  "reward_per_step": 0.052,
+  "wall_s": 18.5
+ },
+ {
+  "level": 3,
+  "condition": "push4x",
+  "policy": "C_det_b01",
+  "falls": 859,
+  "falls_per_env_20s": 3.355,
+  "reward_per_step": 0.054,
+  "wall_s": 18.3
+ },
+ {
+  "level": 3,
+  "condition": "push4x",
+  "policy": "D_det_b004",
+  "falls": 908,
+  "falls_per_env_20s": 3.547,
+  "reward_per_step": 0.053,
+  "wall_s": 18.9
+ },
+ {
+  "level": 3,
+  "condition": "push4x",
+  "policy": "vel_baseline",
+  "falls": 747,
+  "falls_per_env_20s": 2.918,
+  "reward_per_step": 0.053,
+  "wall_s": 18.1
+ },
+ {
+  "level": 4,
+  "condition": "clean",
+  "policy": "A_cpl_b0",
+  "falls": 32,
+  "falls_per_env_20s": 0.125,
+  "reward_per_step": 0.093,
+  "wall_s": 17.1
+ },
+ {
+  "level": 4,
+  "condition": "clean",
+  "policy": "B_det_b0",
+  "falls": 15,
+  "falls_per_env_20s": 0.059,
+  "reward_per_step": 0.091,
+  "wall_s": 16.8
+ },
+ {
+  "level": 4,
+  "condition": "clean",
+  "policy": "C_det_b01",
+  "falls": 15,
+  "falls_per_env_20s": 0.059,
+  "reward_per_step": 0.092,
+  "wall_s": 16.8
+ },
+ {
+  "level": 4,
+  "condition": "clean",
+  "policy": "D_det_b004",
+  "falls": 26,
+  "falls_per_env_20s": 0.102,
+  "reward_per_step": 0.092,
+  "wall_s": 16.8
+ },
+ {
+  "level": 4,
+  "condition": "push4x",
+  "policy": "A_cpl_b0",
+  "falls": 1080,
+  "falls_per_env_20s": 4.219,
+  "reward_per_step": 0.053,
+  "wall_s": 20.8
+ },
+ {
+  "level": 4,
+  "condition": "push4x",
+  "policy": "B_det_b0",
+  "falls": 965,
+  "falls_per_env_20s": 3.77,
+  "reward_per_step": 0.051,
+  "wall_s": 20.0
+ },
+ {
+  "level": 4,
+  "condition": "push4x",
+  "policy": "C_det_b01",
+  "falls": 925,
+  "falls_per_env_20s": 3.613,
+  "reward_per_step": 0.053,
+  "wall_s": 18.3
+ },
+ {
+  "level": 4,
+  "condition": "push4x",
+  "policy": "D_det_b004",
+  "falls": 924,
+  "falls_per_env_20s": 3.609,
+  "reward_per_step": 0.052,
+  "wall_s": 19.1
+ }
+]

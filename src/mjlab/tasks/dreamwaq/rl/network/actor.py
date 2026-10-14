@@ -9,12 +9,13 @@ vector estimated by CENet. This module plugs CENet into rsl_rl's ``MLPModel``::
         -> [o_t, v_hat_t, z_t] -> MLP -> action distribution
 
 CENet is a submodule of the actor, so it shares the actor's parameters,
-optimizer, state dict and export path. The policy gradient is kept in the graph
-(no detach), so it flows into the CENet encoder in addition to the auxiliary
-``L_CE`` loss, as decided for this reproduction. The policy consumes the
-posterior mean ``mu_t`` (deterministic given the history), which keeps the PPO
-importance ratio exact; the VAE branch of the auxiliary loss samples ``z_t``
-from the posterior instead.
+optimizer, state dict and export path. The policy treats ``v_hat_t`` and ``z_t``
+as inputs, so the actor path stops the gradient (``detach``): PPO's policy
+gradient never reaches the CENet encoder, which is optimized by the auxiliary
+``L_CE`` loss alone (paper II-C: "CENet is optimized using a hybrid loss
+function"). The policy consumes the posterior mean ``mu_t`` (deterministic
+given the history), which keeps the PPO importance ratio exact; the VAE branch
+of the auxiliary loss samples ``z_t`` from the posterior instead.
 """
 
 from __future__ import annotations
@@ -238,7 +239,11 @@ class DreamwaqActorModel(MLPModel):
     # input stays deterministic and the PPO ratio has no resampling noise.
     cenet_output = self.cenet(self._cenet_history(obs), sample=False)
     self._last_cenet_output = cenet_output
-    velocity = cenet_output.velocity
+    # Stop-gradient: the actor sees v_hat and z as inputs, so the PPO loss must
+    # not update CENet (paper II-C defines CENet's objective as L_CE alone).
+    # CENet keeps its training signal from the auxiliary losses, which read the
+    # live tensors cached above.
+    velocity = cenet_output.velocity.detach()
     self._publish_velocity_estimate(velocity)
     # AdaBoot (paper Eq. 8): swap the velocity estimate for the simulated
     # ground truth wherever the AdaBoot mask says so. The mask is absent unless
@@ -248,7 +253,7 @@ class DreamwaqActorModel(MLPModel):
       mask = _tensor(obs, BOOT_FLAG_KEY)
       ground_truth = _tensor(obs, self._v_target_group)
       velocity = mask * velocity + (1.0 - mask) * ground_truth
-    return torch.cat((proprio, velocity, cenet_output.z), dim=-1)
+    return torch.cat((proprio, velocity, cenet_output.z.detach()), dim=-1)
 
   def update_normalization(self, obs: TensorDict) -> None:
     """Update the actor and CENet observation normalization statistics."""
