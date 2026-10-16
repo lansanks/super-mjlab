@@ -1,3 +1,9 @@
+from mjlab.asset_zoo.robots.black.black_constants import (
+  BLACK_ACTION_SCALE as BLACK_ACTION_SCALE,
+)
+from mjlab.asset_zoo.robots.black.black_constants import (
+  get_black_robot_cfg as get_black_robot_cfg,
+)
 from mjlab.asset_zoo.robots.i2rt_yam.yam_constants import (
   YAM_ACTION_SCALE as YAM_ACTION_SCALE,
 )

@@ -37,7 +37,10 @@
   </asset>
 
   <worldbody>
-    <body name="trunk" pos="0 0 0">
+    <!-- Reference (qpos0) height: the zero-joint pose stands with its feet on
+         the ground. The training spawn pose comes from mjlab's initial state,
+         not from this position. -->
+    <body name="trunk" pos="0 0 0.58">
       <freejoint/>
       <inertial pos="-0.013095 -0.00005 -0.074252" mass="5.7042" fullinertia="0.0092853 0.0076386 0.012703 -0.0000026 0.0000017 -0.0000276"/>
       <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="trunk_mat" type="mesh" mesh="trunk" />

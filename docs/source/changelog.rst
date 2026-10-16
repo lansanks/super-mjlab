@@ -13,6 +13,12 @@ Added
   pairs a six-frame proprioceptive history with a CENet-based actor model and a
   PPO variant that learns the estimator and the policy jointly.
 
+- Added the ``Mjlab-DreamWaQ-Rough-Black`` and
+  ``Mjlab-DreamWaQ-Flat-Black`` tasks, which train the black quadruped with the
+  same DreamWaQ pipeline. Black uses the same GO-M8010-6 motors as the Go1 but a
+  2.5:1 knee reduction instead of 1.5:1, and its right legs are mirrored in the
+  MJCF, so the initial state is side-specific.
+
 - Added optional ``cenet_cfg`` and ``dreamwaq_cfg`` fields to ``RslRlModelCfg``
   and ``RslRlPpoAlgorithmCfg`` so the DreamWaQ CENet and the weights of its
   auxiliary losses can be tuned from the RL configuration.

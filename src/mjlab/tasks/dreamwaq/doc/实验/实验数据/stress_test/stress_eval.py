@@ -85,7 +85,8 @@ def make_noise(t, gen, scale):
   noise = torch.zeros_like(t)
   for lo, hi, width in NOISE_SLICES:
     noise[..., lo:hi] = (
-      torch.rand(t.shape[:-1] + (hi - lo,), generator=gen, device="cpu").to(t.device) * 2.0
+      torch.rand(t.shape[:-1] + (hi - lo,), generator=gen, device="cpu").to(t.device)
+      * 2.0
       - 1.0
     ) * (width * scale)
   return noise
@@ -116,17 +117,28 @@ def apply_push(env, gen, scale):
       torch.rand(n, generator=gen, device="cpu").to(delta.device) * 2.0 - 1.0
     ) * (w * scale)
   ids = torch.arange(n, device=env.unwrapped.device)
-  robot.write_root_link_velocity_to_sim(robot.data.root_link_vel_w[ids] + delta, env_ids=ids)
+  robot.write_root_link_velocity_to_sim(
+    robot.data.root_link_vel_w[ids] + delta, env_ids=ids
+  )
 
 
 def load_baseline_policy(env, device, path):
   from rsl_rl.models import MLPModel
+
   obs = env.get_observations()
   policy = MLPModel(
-    obs=obs, obs_groups={"actor": ["actor"]}, obs_set="actor", output_dim=12,
-    hidden_dims=(512, 256, 128), activation="elu", obs_normalization=True,
-    distribution_cfg={"class_name": "GaussianDistribution", "init_std": 1.0,
-                      "std_type": "scalar"},
+    obs=obs,
+    obs_groups={"actor": ["actor"]},
+    obs_set="actor",
+    output_dim=12,
+    hidden_dims=(512, 256, 128),
+    activation="elu",
+    obs_normalization=True,
+    distribution_cfg={
+      "class_name": "GaussianDistribution",
+      "init_std": 1.0,
+      "std_type": "scalar",
+    },
   )
   sd = torch.load(path, map_location="cpu", weights_only=False)["actor_state_dict"]
   missing, unexpected = policy.load_state_dict(sd, strict=False)
@@ -144,7 +156,9 @@ def run_cell(env, runner, device, policy_path, cond, steps, baseline=False):
   torch.manual_seed(SEED)
   obs, _ = env.reset()
   gen = torch.Generator(device="cpu").manual_seed(SEED)
-  bias = ((torch.rand(NUM_ENVS, 12, generator=gen) * 2.0 - 1.0) * (TRAIN_BIAS * bias_scale)).to(device)
+  bias = (
+    (torch.rand(NUM_ENVS, 12, generator=gen) * 2.0 - 1.0) * (TRAIN_BIAS * bias_scale)
+  ).to(device)
   falls = 0
   reward_sum = 0.0
   for step in range(steps):
@@ -157,7 +171,8 @@ def run_cell(env, runner, device, policy_path, cond, steps, baseline=False):
     if push_scale > 0 and (step + 1) % PUSH_PERIOD == 0:
       apply_push(env, gen, push_scale)
   return {
-    "condition": cname, "falls": falls,
+    "condition": cname,
+    "falls": falls,
     "falls_per_env_20s": falls / NUM_ENVS * (1000.0 / steps),
     "reward_per_step": reward_sum / (NUM_ENVS * steps),
   }
@@ -182,14 +197,20 @@ def main():
     if runner is None:
       runner_cls = load_runner_cls(TASK)
       runner = runner_cls(env, asdict(load_rl_cfg(TASK)), device=device)
-      print(f"[INFO] env built ({n_rows} rows x {n_cols} cols) in {time.time()-t0:.1f}s", flush=True)
+      print(
+        f"[INFO] env built ({n_rows} rows x {n_cols} cols) in {time.time() - t0:.1f}s",
+        flush=True,
+      )
     policies = [BASELINE] if "--baseline-only" in sys.argv else CKPTS
     for cond in conditions:
       for pname, path in policies:
         t0 = time.time()
-        row = run_cell(env, runner, device, path, cond, steps,
-                       baseline=pname.startswith("vel_"))
-        row.update({"level": level, "policy": pname, "wall_s": round(time.time() - t0, 1)})
+        row = run_cell(
+          env, runner, device, path, cond, steps, baseline=pname.startswith("vel_")
+        )
+        row.update(
+          {"level": level, "policy": pname, "wall_s": round(time.time() - t0, 1)}
+        )
         results.append(row)
         print(
           f"L{level} {row['condition']:16s} {pname:11s} falls={row['falls']:5d} "
@@ -197,7 +218,11 @@ def main():
           f"[{row['wall_s']}s]",
           flush=True,
         )
-  out = pathlib.Path("/tmp/stress_results_calib.json" if mode == "calibrate" else "/tmp/stress_results.json")
+  out = pathlib.Path(
+    "/tmp/stress_results_calib.json"
+    if mode == "calibrate"
+    else "/tmp/stress_results.json"
+  )
   out.write_text(json.dumps(results, indent=1))
   print(f"[INFO] saved {out}")
 
