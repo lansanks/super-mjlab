@@ -8,6 +8,27 @@ Upcoming version (not yet released)
 Added
 ^^^^^
 
+- Added the ``Mjlab-HIM-Rough-Unitree-Go1`` task, a reproduction of HIM
+  (Hybrid Internal Model). A six-frame proprioceptive history feeds source and
+  target encoders whose hybrid internal embedding (a velocity estimate plus a
+  16-dim implicit response) is trained with SwAV contrastive learning against
+  the robot's successor state. The estimator is updated by its own Adam inside
+  the new ``HimPPO`` algorithm, which drops terminal transitions from the
+  contrastive objective. The task reuses the DreamWaQ Go1 locomotion
+  environment (rewards, terrain, domain randomization and terminations) and
+  swaps its CENet observation groups for ``him_input`` (observation history)
+  and ``him_state`` (successor-state frame).
+
+- Added optional ``him_cfg`` fields to ``RslRlModelCfg`` and
+  ``RslRlPpoAlgorithmCfg`` so the HIM estimator (observation groups, latent
+  dimension, prototypes) and its auxiliary losses (weights, gradient clipping,
+  Sinkhorn parameters) can be tuned from the RL configuration.
+
+- Added the ``Mjlab-HIM-Rough-Black`` and ``Mjlab-HIM-Flat-Black`` tasks, which
+  train the black quadruped with the same HIM pipeline. Black is 12-DoF like the
+  Go1, so the observation layout, the estimator and the policy are unchanged;
+  the tasks reuse the DreamWaQ Black environments.
+
 - Added the ``Mjlab-DreamWaQ-Rough-Unitree-Go1`` task, a reproduction of
   DreamWaQ (implicit terrain imagination via a context-aided estimator). It
   pairs a six-frame proprioceptive history with a CENet-based actor model and a

@@ -23,15 +23,16 @@ class MjlabOnPolicyRunner(OnPolicyRunner):
     # Strip None-valued optional configs so MLPModel doesn't receive them.
     for key in ("actor", "critic"):
       if key in train_cfg:
-        for opt in ("cnn_cfg", "distribution_cfg", "cenet_cfg"):
+        for opt in ("cnn_cfg", "distribution_cfg", "cenet_cfg", "him_cfg"):
           if train_cfg[key].get(opt) is None:
             train_cfg[key].pop(opt, None)
         if train_cfg[key].get("rnn_type") is None:
           for opt in ("rnn_type", "rnn_hidden_dim", "rnn_num_layers"):
             train_cfg[key].pop(opt, None)
-    # DreamWaQ-specific algorithm overrides must not reach plain PPO.
-    if train_cfg.get("algorithm", {}).get("dreamwaq_cfg") is None:
-      train_cfg.get("algorithm", {}).pop("dreamwaq_cfg", None)
+    # Task-specific algorithm overrides must not reach plain PPO.
+    for opt in ("dreamwaq_cfg", "him_cfg"):
+      if train_cfg.get("algorithm", {}).get(opt) is None:
+        train_cfg.get("algorithm", {}).pop(opt, None)
     super().__init__(env, train_cfg, log_dir, device)
 
   def export_policy_to_onnx(

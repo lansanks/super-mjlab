@@ -216,6 +216,7 @@ def unitree_go1_dreamwaq_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.rewards["body_ang_vel"].weight = 0.0
   cfg.rewards["angular_momentum"].weight = 0.0
   cfg.rewards["air_time"].weight = 0.0
+  # cfg.rewards["foot_clearance"].weight = 0.0
 
   # Per-body-group collision penalties.
   cfg.rewards["self_collisions"] = RewardTermCfg(

@@ -1,0 +1,10 @@
+{
+ "kind": "him",
+ "checkpoint": "model_2999",
+ "phase_variance_explained": 0.9284457161058802,
+ "terrain_purity_raw": 0.289515806322529,
+ "terrain_purity_phase_removed": 0.20788315326130452,
+ "terrain_purity_env_mean": 0.31850789096126253,
+ "n_envs_averaged": 697,
+ "chance": 0.14285714285714285
+}

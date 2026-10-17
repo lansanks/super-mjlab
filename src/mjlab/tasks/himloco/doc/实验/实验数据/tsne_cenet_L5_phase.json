@@ -1,0 +1,9 @@
+{
+ "checkpoint": "model_599",
+ "period_s": 0.45653726884681484,
+ "phase_variance_explained_latent": 0.4302351186452045,
+ "phase_variance_explained_tsne": 0.5893060402217851,
+ "terrain_purity_raw": 0.46267760656393836,
+ "terrain_purity_phase_removed": 0.4172503502101261,
+ "n_phase_samples": 4997
+}

@@ -46,6 +46,15 @@ class RslRlModelCfg:
   ``log_var_range`` (bounds of the posterior log-variance).
   """
 
+  him_cfg: dict[str, Any] | None = None
+  """HIM estimator overrides passed to ``HimActorModel`` (actor only).
+
+  Keys: ``obs_group`` (observation history group), ``state_group`` (successor
+  state group), ``latent_dim``, ``encoder_hidden_dims``, ``target_hidden_dims``,
+  ``activation``, ``num_prototypes``, ``temperature`` and ``history_order``
+  (``"oldest_first"`` for mjlab's history buffers).
+  """
+
 
 @dataclass
 class RslRlPpoAlgorithmCfg:
@@ -97,6 +106,15 @@ class RslRlPpoAlgorithmCfg:
   environment and rollout, or ``"iteration"``: one draw per rollout).
   ``recon_terms`` optionally overrides the ordered ``{name: dim}`` layout of the
   reconstructed observation used by the CENet error metrics.
+  """
+
+  him_cfg: dict[str, Any] | None = None
+  """HIM estimator-training overrides passed to ``HimPPO``.
+
+  Keys: ``state_group`` (observation group holding the successor state),
+  ``est_coef`` and ``swap_coef`` (weights of the velocity and SwAV losses),
+  ``max_grad_norm`` (estimator gradient clipping) and ``sinkhorn_eps`` /
+  ``sinkhorn_iters`` (Sinkhorn-Knopp transport plan of the SwAV targets).
   """
 
 
