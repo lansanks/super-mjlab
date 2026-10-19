@@ -1,4 +1,4 @@
-"""按步态相位给 latent 上色，检验"latent 是否被相位主导"。
+"""按步态相位给 latent 上色，检验 latent 与步态相位的关系。
 
 输入是 ``tsne_latent.py --store-raw`` 产出的 ``.npz``（含密集原始样本的
 关节角与足端接触时间）::
@@ -13,9 +13,8 @@
 2. 把相位映射回 t-SNE 用的那批子采样点（按 (env_id, step) 配对）；
 3. 画三联图：t-SNE 按地形上色 / t-SNE 按相位上色（周期色环）/ latent 的
    PC1-PC2 按相位上色；
-4. 打印三个量：相位对 latent 的方差解释率 R²、以及"原始 / 去掉相位成分后"
-   的地形 1-NN 可分性——如果 R² 很高而地形可分性没有变化，就说明 latent 主要
-   在编码相位，地形（若有）藏在残差里。
+4. 打印三个量：相位对 latent 的中心化方差解释率 R²、PCA 有效维度、以及
+   "原始 / 去掉相位成分后"的地形 1-NN 可分性。
 """
 
 from __future__ import annotations
@@ -79,12 +78,30 @@ def purity(a: np.ndarray, labels: np.ndarray) -> float:
 
 
 def phase_r2(x: np.ndarray, phase: np.ndarray) -> tuple[float, np.ndarray]:
-  """把 x 对 [cos φ, sin φ] 做最小二乘，返回 R² 与残差。"""
+  """把 x 对 [cos φ, sin φ] 做最小二乘，按中心化方差返回 R² 与残差。"""
   f = np.stack([np.cos(phase), np.sin(phase), np.ones_like(phase)], axis=-1)
   coef, *_ = np.linalg.lstsq(f, x, rcond=None)
   resid = x - f @ coef
-  r2 = 1.0 - float((resid**2).sum() / (x**2).sum())
+  x_centered = x - x.mean(axis=0)
+  total_variance = float((x_centered**2).sum())
+  if total_variance <= np.finfo(np.float64).eps:
+    return float("nan"), resid
+  r2 = 1.0 - float((resid**2).sum() / total_variance)
   return r2, resid
+
+
+def pca_variance_spectrum(x: np.ndarray) -> tuple[np.ndarray, float]:
+  """返回按方差排序的主成分占比与参与率（有效维度）。"""
+  x = np.asarray(x, dtype=np.float64)
+  x_centered = x - x.mean(axis=0)
+  covariance = x_centered.T @ x_centered / max(len(x) - 1, 1)
+  eigenvalues = np.clip(np.linalg.eigvalsh(covariance)[::-1], 0.0, None)
+  total_variance = float(eigenvalues.sum())
+  if total_variance <= np.finfo(np.float64).eps:
+    return np.zeros_like(eigenvalues), float("nan")
+  ratios = eigenvalues / total_variance
+  participation = float(total_variance**2 / (eigenvalues**2).sum())
+  return ratios, participation
 
 
 def main() -> None:
@@ -159,11 +176,14 @@ def main() -> None:
   x = x - x.mean(0)
   u, s, _ = np.linalg.svd(x, full_matrices=False)
   pc = u * s
+  pca_ratios, participation = pca_variance_spectrum(x)
   sc2 = axes[2].scatter(
     pc[:, 0], pc[:, 1], s=6, alpha=0.9, c=phase[ok], cmap="hsv", linewidths=0
   )
   axes[2].set_title(
     f"latent PC1-PC2 coloured by gait phase\n"
+    f"PC1 {pca_ratios[0]:.1%}, PC2 {pca_ratios[1]:.1%}, "
+    f"effective dim {participation:.2f}\n"
     f"phase explains {latent_r2:.1%} of the 16-D latent variance\n"
     f"terrain 1-NN purity: {p_raw:.2f} → {p_res:.2f} after removing phase",
     fontsize=10,
@@ -190,6 +210,8 @@ def main() -> None:
     "terrain_purity_raw": p_raw,
     "terrain_purity_phase_removed": p_res,
     "n_phase_samples": int(ok.sum()),
+    "pca_variance_ratios": pca_ratios.tolist(),
+    "pca_effective_dimension": participation,
   }
   out.with_suffix(".json").write_text(json.dumps(summary, indent=1))
   print(f"[INFO] 图已保存：{out}")

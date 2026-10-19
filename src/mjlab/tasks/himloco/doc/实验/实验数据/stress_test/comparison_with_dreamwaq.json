@@ -1,0 +1,32 @@
+{
+ "protocol": {
+  "terrain_level": 3,
+  "num_envs": 256,
+  "duration_s": 20,
+  "seed": 20261012,
+  "steps": 1000,
+  "push_period_steps": 50
+ },
+ "total_falls_all_conditions": {
+  "him_tau01": 611,
+  "him_tau3": 706,
+  "dreamwaq_b004": 1469,
+  "velocity_baseline": 1283
+ },
+ "new_him_total_reduction_vs": {
+  "him_tau3": 0.13456090651558072,
+  "dreamwaq_b004": 0.584070796460177,
+  "velocity_baseline": 0.5237724084177708
+ },
+ "push4_falls": {
+  "him_tau01": 434,
+  "him_tau3": 479,
+  "dreamwaq_b004": 908,
+  "velocity_baseline": 747
+ },
+ "new_him_push4_reduction_vs": {
+  "him_tau3": 0.09394572025052195,
+  "dreamwaq_b004": 0.5220264317180616,
+  "velocity_baseline": 0.4190093708165997
+ }
+}

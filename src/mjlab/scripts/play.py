@@ -11,11 +11,12 @@ from typing import Literal
 import torch
 import tyro
 
-from mjlab.envs import ManagerBasedRlEnv
+from mjlab.envs import ManagerBasedRlEnv, ManagerBasedRlEnvCfg
 from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
 from mjlab.scripts._cli import maybe_print_top_level_help
 from mjlab.tasks.registry import list_tasks, load_env_cfg, load_rl_cfg, load_runner_cls
 from mjlab.tasks.tracking.mdp import MotionCommandCfg
+from mjlab.terrains import BoxInvertedPyramidStairsTerrainCfg
 from mjlab.utils.os import get_wandb_checkpoint_path
 from mjlab.utils.torch import configure_torch_backends
 from mjlab.utils.wrappers import VideoRecorder
@@ -28,6 +29,69 @@ def _parse_wandb_dt(value: str | datetime) -> datetime:
   if isinstance(value, str):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
   return value
+
+
+def _configure_fixed_stair_play(
+  env_cfg: ManagerBasedRlEnvCfg,
+  stair_height_spec: str,
+) -> None:
+  """Replace the play terrain with one fixed ascending staircase per height."""
+  if not stair_height_spec.strip():
+    return
+  try:
+    stair_heights = tuple(
+      float(value) for value in stair_height_spec.replace(",", " ").split()
+    )
+  except ValueError as exc:
+    raise ValueError(
+      f"Invalid fixed stair height list: {stair_height_spec!r}."
+    ) from exc
+  if any(height <= 0.0 for height in stair_heights):
+    raise ValueError("Fixed stair heights must be positive.")
+  if len(set(stair_heights)) != len(stair_heights):
+    raise ValueError("Fixed stair heights must be unique.")
+
+  terrain = env_cfg.scene.terrain
+  if terrain is None or terrain.terrain_generator is None:
+    raise ValueError("Fixed stair play requires a generator terrain.")
+
+  generator = terrain.terrain_generator
+  generator.curriculum = True
+  generator.num_rows = 1
+  generator.sub_terrains = {
+    f"stairs_{height:.2f}m": BoxInvertedPyramidStairsTerrainCfg(
+      proportion=1.0,
+      step_height_range=(height, height),
+      step_width=0.3,
+      platform_width=3.0,
+      border_width=1.0,
+    )
+    for height in stair_heights
+  }
+  terrain.max_init_terrain_level = 0
+  env_cfg.scene.num_envs = len(stair_heights)
+  env_cfg.events.pop("randomize_terrain", None)
+
+
+def _normalize_fixed_stair_args(args: list[str]) -> list[str]:
+  """Convert space- or comma-separated stair heights into one CLI token."""
+  option = "--fixed-stair-heights"
+  if option not in args:
+    return args
+  option_index = args.index(option)
+  first_value = option_index + 1
+  value_index = first_value
+  while value_index < len(args) and not args[value_index].startswith("-"):
+    value_index += 1
+  values = " ".join(args[first_value:value_index]).replace(",", " ").split()
+  if not values:
+    return args
+  return [
+    *args[:option_index],
+    option,
+    ",".join(values),
+    *args[value_index:],
+  ]
 
 
 @dataclass(frozen=True)
@@ -47,6 +111,8 @@ class PlayConfig:
   video_width: int | None = None
   camera: int | str | None = None
   viewer: Literal["auto", "native", "viser"] = "auto"
+  fixed_stair_heights: str = ""
+  """Use fixed ascending stair heights in meters instead of random play terrain."""
   no_terminations: bool = False
   """Disable all termination conditions (useful for viewing motions with dummy agents)."""
   log_root: str = "logs/rsl_rl"
@@ -63,6 +129,7 @@ def run_play(task_id: str, cfg: PlayConfig):
 
   env_cfg = load_env_cfg(task_id, play=True)
   agent_cfg = load_rl_cfg(task_id)
+  _configure_fixed_stair_play(env_cfg, cfg.fixed_stair_heights)
 
   DUMMY_MODE = cfg.agent in {"zero", "random"}
   TRAINED_MODE = not DUMMY_MODE
@@ -314,6 +381,7 @@ def main():
 
   # Parse the rest of the arguments + allow overriding env_cfg and agent_cfg.
   agent_cfg = load_rl_cfg(chosen_task)
+  remaining_args = _normalize_fixed_stair_args(remaining_args)
 
   args = tyro.cli(
     PlayConfig,

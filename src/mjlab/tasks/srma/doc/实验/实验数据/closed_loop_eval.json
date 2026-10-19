@@ -1,0 +1,74 @@
+[
+ {
+  "level": 3,
+  "mode": "normal",
+  "reward_per_step": 0.08895431677624584,
+  "falls_per_env_20s": 0.00390625,
+  "error_vel_xy": 0.30473098158836365,
+  "peak_joint_vel": 23.939579010009766
+ },
+ {
+  "level": 3,
+  "mode": "zero_latent",
+  "reward_per_step": 0.05336261712387204,
+  "falls_per_env_20s": 0.078125,
+  "error_vel_xy": 0.7055071525275707,
+  "peak_joint_vel": 48.0439567565918
+ },
+ {
+  "level": 3,
+  "mode": "different_terrain_latent",
+  "reward_per_step": 0.07267158551514148,
+  "falls_per_env_20s": 0.16015625,
+  "error_vel_xy": 0.4918049481220362,
+  "peak_joint_vel": 40.778568267822266
+ },
+ {
+  "level": 5,
+  "mode": "normal",
+  "reward_per_step": 0.08301802407577634,
+  "falls_per_env_20s": 0.0625,
+  "error_vel_xy": 0.4519536076695658,
+  "peak_joint_vel": 44.876705169677734
+ },
+ {
+  "level": 5,
+  "mode": "zero_latent",
+  "reward_per_step": 0.04389826929755509,
+  "falls_per_env_20s": 0.3125,
+  "error_vel_xy": 0.5936017813137136,
+  "peak_joint_vel": 57.478118896484375
+ },
+ {
+  "level": 5,
+  "mode": "different_terrain_latent",
+  "reward_per_step": 0.0595458026714623,
+  "falls_per_env_20s": 0.41796875,
+  "error_vel_xy": 0.552249267809093,
+  "peak_joint_vel": 61.555641174316406
+ },
+ {
+  "level": 7,
+  "mode": "normal",
+  "reward_per_step": 0.0782005470097065,
+  "falls_per_env_20s": 0.1484375,
+  "error_vel_xy": 0.4419424668486629,
+  "peak_joint_vel": 36.39329147338867
+ },
+ {
+  "level": 7,
+  "mode": "zero_latent",
+  "reward_per_step": 0.040947489826008675,
+  "falls_per_env_20s": 1.0546875,
+  "error_vel_xy": 0.38464296782067053,
+  "peak_joint_vel": 84.2000503540039
+ },
+ {
+  "level": 7,
+  "mode": "different_terrain_latent",
+  "reward_per_step": 0.05525695346854627,
+  "falls_per_env_20s": 0.98828125,
+  "error_vel_xy": 0.45524889145056313,
+  "peak_joint_vel": 62.273468017578125
+ }
+]

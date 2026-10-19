@@ -8,16 +8,25 @@ Upcoming version (not yet released)
 Added
 ^^^^^
 
+- Added ``--fixed-stair-heights`` to the play CLI. It replaces random play
+  terrain with fixed ascending staircases and assigns one environment to each
+  requested height.
+
+- Added a per-foot climb progress reward to the SRMA teacher. Each loaded foot
+  independently earns a one-time reward when its contact height rises by at
+  least two centimeters, covering both stairs and slopes while avoiding repeat
+  rewards for the same height.
+
 - Added the ``Mjlab-HIM-Rough-Unitree-Go1`` task, a reproduction of HIM
   (Hybrid Internal Model). A six-frame proprioceptive history feeds source and
   target encoders whose hybrid internal embedding (a velocity estimate plus a
   16-dim implicit response) is trained with SwAV contrastive learning against
   the robot's successor state. The estimator is updated by its own Adam inside
   the new ``HimPPO`` algorithm, which drops terminal transitions from the
-  contrastive objective. The task reuses the DreamWaQ Go1 locomotion
-  environment (rewards, terrain, domain randomization and terminations) and
-  swaps its CENet observation groups for ``him_input`` (observation history)
-  and ``him_state`` (successor-state frame).
+  contrastive objective. The task uses a standalone HiMLoco environment
+  configuration built from mjlab's robot-agnostic velocity MDP, with
+  ``him_input`` (observation history) and ``him_state`` (successor-state frame)
+  alongside the regular actor and critic groups.
 
 - Added optional ``him_cfg`` fields to ``RslRlModelCfg`` and
   ``RslRlPpoAlgorithmCfg`` so the HIM estimator (observation groups, latent
@@ -27,7 +36,8 @@ Added
 - Added the ``Mjlab-HIM-Rough-Black`` and ``Mjlab-HIM-Flat-Black`` tasks, which
   train the black quadruped with the same HIM pipeline. Black is 12-DoF like the
   Go1, so the observation layout, the estimator and the policy are unchanged;
-  the tasks reuse the DreamWaQ Black environments.
+  its robot-specific environment configuration is also self-contained under
+  the HiMLoco task package.
 
 - Added the ``Mjlab-DreamWaQ-Rough-Unitree-Go1`` task, a reproduction of
   DreamWaQ (implicit terrain imagination via a context-aided estimator). It
@@ -80,6 +90,12 @@ Added
 Changed
 ^^^^^^^
 
+- HiMLoco now applies the released implementation's observation scales:
+  angular velocity is multiplied by ``0.25``, joint velocity by ``0.05``,
+  linear commands by ``2.0``, angular commands by ``0.25``, and privileged
+  linear velocity remains scaled by ``2.0``. The same scaled terms feed the
+  actor, critic, HIM history and successor-state groups.
+
 - Aligned DreamWaQ's Go1 domain randomization with the paper's Table II:
   payload mass (with exact parallel-axis inertia) and the center-of-mass shift
   are now randomized together through the new ``body_payload`` function, Kp/Kd
@@ -107,6 +123,11 @@ Changed
 
 Fixed
 ^^^^^
+
+- HiMLoco's estimator gradients are now cleared after its independent Adam
+  step, and PPO clips only the actor and critic parameters. Previously stale
+  HIO gradients could contribute to the actor gradient-norm calculation even
+  though they were not applied by the main optimizer.
 
 - DreamWaQ training no longer crashes with a CUDA ``device-side assert`` when
   the CENet posterior diverges: the log-variance is clamped to ``[-10, 10]``

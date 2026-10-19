@@ -55,6 +55,14 @@ class RslRlModelCfg:
   (``"oldest_first"`` for mjlab's history buffers).
   """
 
+  srma_cfg: dict[str, Any] | None = None
+  """SRMA teacher overrides passed to ``SRMATeacherActorModel`` (actor only).
+
+  Keys: ``height_group``, ``friction_group``, ``push_group``,
+  ``velocity_group``, ``height_shape``, ``latent_dim``, ``external_mode`` and
+  encoder hidden dimensions.
+  """
+
 
 @dataclass
 class RslRlPpoAlgorithmCfg:

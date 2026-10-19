@@ -23,6 +23,8 @@ response model against a reset state.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from itertools import chain
 from typing import cast
 
 import torch
@@ -96,14 +98,22 @@ class HimPPO(PPO):
     # actor (so it follows the actor's state dict and export path), which means
     # the PPO optimizer was built over its parameters too; drop them there so
     # the main Adam only owns the policy MLP and the critic.
-    estimator_ids = {id(p) for p in actor.estimator.parameters()}
+    self._estimator_param_ids = {id(p) for p in actor.estimator.parameters()}
     for group in self.optimizer.param_groups:
-      group["params"] = [p for p in group["params"] if id(p) not in estimator_ids]
+      group["params"] = [
+        p for p in group["params"] if id(p) not in self._estimator_param_ids
+      ]
     self.estimator_optimizer = torch.optim.Adam(
       actor.estimator.parameters(), lr=self.learning_rate
     )
 
     self._pending_metrics: dict[str, float] = {}
+
+  def _policy_parameters(self) -> Iterator[torch.nn.Parameter]:
+    """Yield actor and critic parameters, excluding the HIM estimator."""
+    for parameter in chain(self.actor.parameters(), self.critic.parameters()):
+      if id(parameter) not in self._estimator_param_ids:
+        yield parameter
 
   def compute_returns(self, obs: TensorDict) -> None:
     """Compute returns and assemble the successor-state targets."""
@@ -304,15 +314,10 @@ class HimPPO(PPO):
       loss.backward()
 
       # Apply the gradients for PPO
-      actor_grad_norm = nn.utils.clip_grad_norm_(
-        self.actor.parameters(), self.max_grad_norm
+      policy_grad_norm = nn.utils.clip_grad_norm_(
+        self._policy_parameters(), self.max_grad_norm
       )
-      critic_grad_norm = nn.utils.clip_grad_norm_(
-        self.critic.parameters(), self.max_grad_norm
-      )
-      if not (
-        bool(torch.isfinite(actor_grad_norm)) and bool(torch.isfinite(critic_grad_norm))
-      ):
+      if not bool(torch.isfinite(policy_grad_norm)):
         self.optimizer.zero_grad()
         skipped_ppo += 1
         continue
@@ -405,6 +410,9 @@ class HimPPO(PPO):
     for param_group in self.estimator_optimizer.param_groups:
       param_group["lr"] = self.learning_rate
     self.estimator_optimizer.step()
+    # The estimator's Adam owns these gradients. Clear them before the PPO
+    # backward/clipping pass so they cannot contribute to policy clipping.
+    self.estimator_optimizer.zero_grad(set_to_none=True)
     return float(est_loss.item()), float(swap_loss.item()), diagnostics
 
   def save(self) -> dict:

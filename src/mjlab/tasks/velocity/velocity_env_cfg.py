@@ -28,10 +28,6 @@ from mjlab.sensor import (
   TerrainHeightSensorCfg,
 )
 from mjlab.sim import MujocoCfg, SimulationCfg
-from mjlab.tasks.dreamwaq.mdp import (
-  push_by_setting_velocity_with_record,
-  push_velocity,
-)
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.terrains import TerrainEntityCfg
@@ -124,7 +120,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       params={"asset_cfg": SceneEntityCfg("robot")},
       clip=(-10.0, 10.0),
     ),
-    "push_velocity": ObservationTermCfg(func=push_velocity),
+    "push_velocity": ObservationTermCfg(func=mdp.push_velocity),
     # Critic sees the true (unbiased) joint positions as privileged information.
     "joint_pos": ObservationTermCfg(func=mdp.joint_pos_rel),
     "height_scan": ObservationTermCfg(
@@ -237,7 +233,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       },
     ),
     "push_robot": EventTermCfg(
-      func=push_by_setting_velocity_with_record,
+      func=mdp.push_by_setting_velocity_with_record,
       mode="interval",
       interval_range_s=(1.0, 3.0),
       params={

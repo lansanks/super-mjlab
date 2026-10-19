@@ -160,6 +160,22 @@ def test_estimator_is_trained_by_its_own_optimizer():
   assert "Metrics/him_swap_accuracy" in alg._pending_metrics
 
 
+def test_estimator_gradients_are_cleared_before_ppo_clipping():
+  alg = make_algorithm()
+  fill_storage(alg)
+  alg.compute_returns(make_obs(NUM_STEPS))
+
+  actor = alg.actor
+  assert isinstance(actor, HimActorModel)
+  alg.update()
+
+  # HIO gradients stay private to the estimator optimizer. The PPO clip only
+  # sees actor and critic parameters, and no stale estimator gradient survives.
+  assert all(parameter.grad is None for parameter in actor.estimator.parameters())
+  policy_parameters = set(alg._policy_parameters())
+  assert policy_parameters.isdisjoint(set(actor.estimator.parameters()))
+
+
 def test_terminal_rows_are_dropped_from_the_hio_loss():
   alg = make_algorithm()
   fill_storage(alg)

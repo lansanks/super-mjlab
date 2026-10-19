@@ -1,7 +1,7 @@
 {
  "kind": "cenet",
  "checkpoint": "model_599",
- "phase_variance_explained": 0.4302351186452045,
+ "phase_variance_explained": 0.42625429573125284,
  "terrain_purity_raw": 0.46267760656393836,
  "terrain_purity_phase_removed": 0.4172503502101261,
  "terrain_purity_env_mean": 0.5616835994194485,

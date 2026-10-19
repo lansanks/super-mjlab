@@ -1,56 +1,53 @@
-"""Observation groups shared by the HIM locomotion tasks.
+"""Shared environment configuration for HiMLoco tasks.
 
-HIM adds two observation groups on top of the locomotion environment; the
-released implementation derives both from the same buffers the policy and the
-critic already use:
-
-``him_input``
-  The actor observation history ``o_t^H`` with ``H = 5`` (six frames including
-  the current one), consumed by the source encoder.
-
-``him_state``
-  The state frame the response is matched against. The released code slices
-  ``next_critic_obs[:, 3 : 45 + 3]``, i.e. the proprioceptive frame *without*
-  the velocity command plus the base linear velocity. The velocity is scaled by
-  ``obs_scales.lin_vel = 2`` in the released code, which is kept here (the
-  policy receives the estimate in the same units, see the task document).
-
-Neither group is routed to the actor or the critic: ``him_state`` carries
-privileged information (the base linear velocity), so it must stay out of the
-policy observation. Both groups are stored in the rollout storage, where the
-algorithm uses them for the hybrid internal optimization.
+HiMLoco uses the robot-agnostic mjlab locomotion environment and adds the two
+observation groups consumed by the hybrid internal model. Robot-specific
+configuration lives in ``config/<robot>``.
 """
 
 from __future__ import annotations
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as envs_mdp
+from mjlab.envs.mdp import dr
+from mjlab.managers.event_manager import EventTermCfg
+from mjlab.managers.metrics_manager import MetricsTermCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.tasks.velocity import mdp
+from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 
 HISTORY_LENGTH = 6
 """Frames in ``him_input``: the current frame plus ``H = 5`` past frames."""
 
+ANG_VEL_SCALE = 0.25
+"""Scale for body angular velocity, matching the released HiMLoco code."""
+
+JOINT_VEL_SCALE = 0.05
+"""Scale for joint velocity, matching the released HiMLoco code."""
+
+COMMAND_SCALE = (2.0, 2.0, 0.25)
+"""Scale for ``[linear_x, linear_y, angular_z]`` commands."""
+
 LIN_VEL_SCALE = 2.0
-"""Scale of the base linear velocity, matching legged_gym's ``obs_scales``."""
-
-DREAMWAQ_OBS_GROUPS = ("cenet_input", "cenet_target_o", "cenet_target_v")
-"""Observation groups of the DreamWaQ task, dropped by the HIM tasks."""
+"""Scale for the privileged base linear velocity and successor target."""
 
 
-def add_himloco_observations(
-  cfg: ManagerBasedRlEnvCfg, play: bool = False
-) -> ManagerBasedRlEnvCfg:
-  """Replace DreamWaQ's CENet groups with HIM's observation groups.
-
-  The rest of the configuration (rewards, terrain, domain randomization,
-  commands, terminations) is left untouched, so the HIM task differs from the
-  DreamWaQ / velocity tasks only in the observations the networks consume.
-  """
-  for group in DREAMWAQ_OBS_GROUPS:
-    cfg.observations.pop(group, None)
+def make_himloco_env_cfg() -> ManagerBasedRlEnvCfg:
+  """Create a robot-independent HiMLoco environment configuration."""
+  cfg = make_velocity_env_cfg()
 
   actor_terms = cfg.observations["actor"].terms
+  actor_terms["base_ang_vel"].scale = ANG_VEL_SCALE
+  actor_terms["joint_vel"].scale = JOINT_VEL_SCALE
+  actor_terms["command"].scale = COMMAND_SCALE
+
+  critic_terms = cfg.observations["critic"].terms
+  critic_terms["base_ang_vel"].scale = ANG_VEL_SCALE
+  critic_terms["joint_vel"].scale = JOINT_VEL_SCALE
+  critic_terms["command"].scale = COMMAND_SCALE
+  critic_terms["base_lin_vel"].scale = LIN_VEL_SCALE
+
   cfg.observations["him_input"] = ObservationGroupCfg(
     terms=actor_terms,
     concatenate_terms=True,
@@ -60,14 +57,11 @@ def add_himloco_observations(
   )
   cfg.observations["him_state"] = ObservationGroupCfg(
     terms={
-      # Same terms (and noise) as the policy observation, minus the command.
       "base_ang_vel": actor_terms["base_ang_vel"],
       "projected_gravity": actor_terms["projected_gravity"],
       "joint_pos": actor_terms["joint_pos"],
       "joint_vel": actor_terms["joint_vel"],
       "actions": actor_terms["actions"],
-      # Privileged simulator truth; the clip is applied before the scale, so
-      # the value range is (-20, 20) after the 2x scaling.
       "base_lin_vel": ObservationTermCfg(
         func=envs_mdp.base_lin_vel,
         params={"asset_cfg": SceneEntityCfg("robot")},
@@ -79,8 +73,36 @@ def add_himloco_observations(
     enable_corruption=True,
   )
 
-  if play:
-    # Play mode runs the trained policy without observation noise.
-    cfg.observations["him_input"].enable_corruption = False
-    cfg.observations["him_state"].enable_corruption = False
+  cfg.metrics["peak_joint_vel"] = MetricsTermCfg(func=mdp.peak_joint_vel, reduce="max")
+
+  del cfg.events["base_com"]
+  cfg.events["payload_inertia"] = EventTermCfg(
+    mode="startup",
+    func=dr.body_payload,
+    params={
+      "asset_cfg": SceneEntityCfg("robot", body_names=()),
+      "mass_range": (-1.0, 2.0),
+      "mount_offset": (0.0, 0.0, 0.06),
+      "com_shift_range": (-0.05, 0.05),
+    },
+  )
+  cfg.events["pd_gains"] = EventTermCfg(
+    mode="startup",
+    func=dr.pd_gains,
+    params={
+      "asset_cfg": SceneEntityCfg("robot"),
+      "operation": "scale",
+      "kp_range": (0.9, 1.1),
+      "kd_range": (0.9, 1.1),
+    },
+  )
+  cfg.events["motor_strength"] = EventTermCfg(
+    mode="startup",
+    func=dr.effort_limits,
+    params={
+      "asset_cfg": SceneEntityCfg("robot"),
+      "operation": "scale",
+      "effort_limit_range": (0.9, 1.1),
+    },
+  )
   return cfg

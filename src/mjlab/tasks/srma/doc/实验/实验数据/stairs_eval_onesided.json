@@ -1,0 +1,90 @@
+[
+ {
+  "type": "pyramid_stairs",
+  "level": 3,
+  "step_height_m": 0.08333333333333333,
+  "falls_per_env_20s": 0.0,
+  "mean_survival_steps": 600.0000610351562,
+  "mean_forward_velocity": 0.764174222946167,
+  "mean_forward_distance_m": 9.170090675354004,
+  "stop_fraction": 0.11275511234998703,
+  "error_vel_xy": 0.0
+ },
+ {
+  "type": "pyramid_stairs_inv",
+  "level": 3,
+  "step_height_m": 0.08333333333333333,
+  "falls_per_env_20s": 0.0,
+  "mean_survival_steps": 600.0000610351562,
+  "mean_forward_velocity": 0.7952067852020264,
+  "mean_forward_distance_m": 9.542481422424316,
+  "stop_fraction": 0.11515023559331894,
+  "error_vel_xy": 0.0
+ },
+ {
+  "type": "pyramid_stairs",
+  "level": 5,
+  "step_height_m": 0.1388888888888889,
+  "falls_per_env_20s": 0.013227513227513227,
+  "mean_survival_steps": 598.4761962890625,
+  "mean_forward_velocity": 0.6945598721504211,
+  "mean_forward_distance_m": 8.3128023147583,
+  "stop_fraction": 0.16247105598449707,
+  "error_vel_xy": 0.35399356484413147
+ },
+ {
+  "type": "pyramid_stairs_inv",
+  "level": 5,
+  "step_height_m": 0.1388888888888889,
+  "falls_per_env_20s": 0.026455026455026454,
+  "mean_survival_steps": 596.77783203125,
+  "mean_forward_velocity": 0.3580308258533478,
+  "mean_forward_distance_m": 4.270666122436523,
+  "stop_fraction": 0.5208600163459778,
+  "error_vel_xy": 0.7585107982158661
+ },
+ {
+  "type": "pyramid_stairs",
+  "level": 7,
+  "step_height_m": 0.19444444444444445,
+  "falls_per_env_20s": 0.05291005291005291,
+  "mean_survival_steps": 593.0873413085938,
+  "mean_forward_velocity": 0.6553199291229248,
+  "mean_forward_distance_m": 7.746664524078369,
+  "stop_fraction": 0.19395551085472107,
+  "error_vel_xy": 0.18214321732521058
+ },
+ {
+  "type": "pyramid_stairs_inv",
+  "level": 7,
+  "step_height_m": 0.19444444444444445,
+  "falls_per_env_20s": 0.05291005291005291,
+  "mean_survival_steps": 591.5238647460938,
+  "mean_forward_velocity": 0.16443310678005219,
+  "mean_forward_distance_m": 1.9064421653747559,
+  "stop_fraction": 0.7240527272224426,
+  "error_vel_xy": 0.5974805764853954
+ },
+ {
+  "type": "pyramid_stairs",
+  "level": 9,
+  "step_height_m": 0.25,
+  "falls_per_env_20s": 0.42328042328042326,
+  "mean_survival_steps": 526.325439453125,
+  "mean_forward_velocity": 0.6527197957038879,
+  "mean_forward_distance_m": 6.652814865112305,
+  "stop_fraction": 0.2283174842596054,
+  "error_vel_xy": 0.26959929710779434
+ },
+ {
+  "type": "pyramid_stairs_inv",
+  "level": 9,
+  "step_height_m": 0.25,
+  "falls_per_env_20s": 0.013227513227513227,
+  "mean_survival_steps": 598.9365234375,
+  "mean_forward_velocity": 0.14251340925693512,
+  "mean_forward_distance_m": 1.7016329765319824,
+  "stop_fraction": 0.7983480095863342,
+  "error_vel_xy": 0.7287891507148743
+ }
+]
