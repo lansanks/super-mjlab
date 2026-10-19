@@ -387,6 +387,7 @@ class stair_climb_progress:
       dtype=torch.bool,
       device=env.device,
     )
+    self._foot_has_rewarded = torch.zeros_like(self._foot_initialized)
 
   def __call__(
     self,
@@ -400,12 +401,15 @@ class stair_climb_progress:
     support_clearance_max: float = 0.05,
     contact_force_threshold: float = 10.0,
     command_threshold: float = 0.1,
+    first_step_multiplier: float = 3.0,
   ) -> torch.Tensor:
     del contact_sensor_name, height_sensor_name, asset_cfg
     if max_step_height <= 0.0:
       raise ValueError("max_step_height must be positive.")
     if min_height_gain <= 0.0:
       raise ValueError("min_height_gain must be positive.")
+    if first_step_multiplier < 1.0:
+      raise ValueError("first_step_multiplier must be at least one.")
 
     contact_data = self._contact_sensor.data
     found = contact_data.found
@@ -448,9 +452,15 @@ class stair_climb_progress:
       & command_active.unsqueeze(-1)
       & (candidate_gain >= min_height_gain)
     )
+    first_reward_event = reward_event & ~self._foot_has_rewarded
+    reward_multiplier = torch.where(
+      first_reward_event,
+      first_step_multiplier,
+      torch.ones_like(candidate_gain),
+    )
     event_gain = torch.where(
       reward_event,
-      candidate_gain.clamp(max=max_step_height),
+      candidate_gain.clamp(max=max_step_height) * reward_multiplier,
       torch.zeros_like(candidate_gain),
     )
 
@@ -467,15 +477,9 @@ class stair_climb_progress:
       ),
     )
     self._foot_initialized |= landing
+    self._foot_has_rewarded |= reward_event
 
     reward = (event_gain / max_step_height / self._step_dt).sum(dim=1)
-    event_count = reward_event.float().sum()
-    env.extras["log"]["Metrics/stair_climb_event_fraction"] = (
-      reward_event.any(dim=1).float().mean()
-    )
-    env.extras["log"]["Metrics/stair_climb_delta_mean"] = (
-      event_gain * reward_event.float()
-    ).sum() / event_count.clamp_min(1.0)
     return reward
 
   def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
@@ -483,6 +487,125 @@ class stair_climb_progress:
       env_ids = slice(None)
     self._foot_anchor_height[env_ids] = 0.0
     self._foot_initialized[env_ids] = False
+    self._foot_has_rewarded[env_ids] = False
+
+
+class command_stall_penalty:
+  """按持续卡住时间积分惩罚沿指令方向无进展。
+
+  不使用地形或接触信息。前向进度取实际速度在指令方向上的投影，宽限期后
+  累计惩罚从 ``penalty_start`` 线性增加到 ``penalty_end``，之后继续以
+  ``penalty_end`` 的每秒速率积分。
+  """
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+    self._robot: Entity = env.scene[cfg.params["asset_cfg"].name]
+    self._step_dt = float(env.step_dt)
+    if self._step_dt <= 0.0:
+      raise ValueError("command_stall_penalty requires a positive env.step_dt.")
+    self._stall_time = torch.zeros(env.num_envs, device=env.device)
+
+  @staticmethod
+  def _penalty_total(
+    stall_time: torch.Tensor,
+    grace_time: float,
+    ramp_time: float,
+    penalty_start: float,
+    penalty_end: float,
+  ) -> torch.Tensor:
+    ramp_fraction = ((stall_time - grace_time) / ramp_time).clamp(min=0.0, max=1.0)
+    ramp_total = penalty_start + (penalty_end - penalty_start) * ramp_fraction
+    sustain_time = (stall_time - grace_time - ramp_time).clamp_min(0.0)
+    total = ramp_total + penalty_end * sustain_time
+    return torch.where(stall_time >= grace_time, -total, torch.zeros_like(total))
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg,
+    command_threshold: float = 0.2,
+    stall_speed_threshold: float = 0.05,
+    recover_speed_threshold: float = 0.1,
+    command_off_threshold: float = 0.1,
+    grace_time: float = 0.5,
+    ramp_time: float = 1.0,
+    penalty_start: float = 0.1,
+    penalty_end: float = 0.5,
+  ) -> torch.Tensor:
+    del asset_cfg
+    if command_threshold <= 0.0:
+      raise ValueError("command_threshold must be positive.")
+    if stall_speed_threshold < 0.0:
+      raise ValueError("stall_speed_threshold must be non-negative.")
+    if recover_speed_threshold < stall_speed_threshold:
+      raise ValueError(
+        "recover_speed_threshold must be at least stall_speed_threshold."
+      )
+    if command_off_threshold < 0.0:
+      raise ValueError("command_off_threshold must be non-negative.")
+    if grace_time < 0.0:
+      raise ValueError("grace_time must be non-negative.")
+    if ramp_time <= 0.0:
+      raise ValueError("ramp_time must be positive.")
+    if penalty_start < 0.0 or penalty_end < penalty_start:
+      raise ValueError(
+        "penalty thresholds must satisfy 0 <= penalty_start <= penalty_end."
+      )
+
+    command = env.command_manager.get_command(command_name)
+    assert command is not None
+    command_xy = command[:, :2]
+    command_norm = torch.norm(command_xy, dim=1)
+    actual_xy = self._robot.data.root_link_lin_vel_b[:, :2]
+    progress_speed = torch.sum(command_xy * actual_xy, dim=1) / command_norm.clamp_min(
+      1.0e-6
+    )
+
+    stalled = (command_norm > command_threshold) & (
+      progress_speed < stall_speed_threshold
+    )
+    recovered = (command_norm < command_off_threshold) | (
+      progress_speed > recover_speed_threshold
+    )
+
+    previous_stall_time = self._stall_time
+    self._stall_time = torch.where(
+      stalled,
+      self._stall_time + self._step_dt,
+      torch.where(
+        recovered,
+        torch.zeros_like(self._stall_time),
+        self._stall_time,
+      ),
+    )
+
+    previous_total = self._penalty_total(
+      previous_stall_time,
+      grace_time,
+      ramp_time,
+      penalty_start,
+      penalty_end,
+    )
+    current_total = self._penalty_total(
+      self._stall_time,
+      grace_time,
+      ramp_time,
+      penalty_start,
+      penalty_end,
+    )
+    incremental_penalty = (current_total - previous_total).clamp(max=0.0)
+    reward = torch.where(
+      stalled,
+      incremental_penalty / self._step_dt,
+      torch.zeros_like(self._stall_time),
+    )
+    return reward
+
+  def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+    if env_ids is None:
+      env_ids = slice(None)
+    self._stall_time[env_ids] = 0.0
 
 
 def feet_slip(

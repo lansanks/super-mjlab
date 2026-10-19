@@ -15,7 +15,14 @@ Added
 - Added a per-foot climb progress reward to the SRMA teacher. Each loaded foot
   independently earns a one-time reward when its contact height rises by at
   least two centimeters, covering both stairs and slopes while avoiding repeat
-  rewards for the same height.
+  rewards for the same height. The first successful climb reward for each foot
+  is multiplied by three.
+
+- Added a command-direction stall penalty to the SRMA teacher. The accumulated
+  penalty ramps from 0.1 to 0.5 over one second after a grace period when the
+  robot has a non-zero linear command but no velocity along that direction,
+  then continues at a rate of 0.5 per second until the environment resets after
+  2.5 seconds of sustained stall.
 
 - Added the ``Mjlab-HIM-Rough-Unitree-Go1`` task, a reproduction of HIM
   (Hybrid Internal Model). A six-frame proprioceptive history feeds source and

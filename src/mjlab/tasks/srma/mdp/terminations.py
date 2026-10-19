@@ -1,17 +1,76 @@
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import torch
 
 from mjlab.entity import Entity
 from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.managers.termination_manager import TerminationTermCfg
 from mjlab.sensor import ContactSensor
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
 
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
+
+
+class command_stall_reset:
+  """Reset an environment that stalls along its commanded direction too long."""
+
+  def __init__(self, cfg: TerminationTermCfg, env: ManagerBasedRlEnv):
+    self._robot: Entity = env.scene[cfg.params["asset_cfg"].name]
+    self._step_dt = float(env.step_dt)
+    self._stall_steps = torch.zeros(
+      env.num_envs,
+      dtype=torch.long,
+      device=env.device,
+    )
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg,
+    command_threshold: float = 0.2,
+    stall_speed_threshold: float = 0.05,
+    recover_speed_threshold: float = 0.1,
+    command_off_threshold: float = 0.1,
+    reset_time: float = 2.5,
+  ) -> torch.Tensor:
+    del asset_cfg
+    command = env.command_manager.get_command(command_name)
+    assert command is not None
+    command_xy = command[:, :2]
+    command_norm = torch.norm(command_xy, dim=1)
+    actual_xy = self._robot.data.root_link_lin_vel_b[:, :2]
+    progress_speed = torch.sum(command_xy * actual_xy, dim=1) / command_norm.clamp_min(
+      1.0e-6
+    )
+
+    stalled = (command_norm > command_threshold) & (
+      progress_speed < stall_speed_threshold
+    )
+    recovered = (command_norm < command_off_threshold) | (
+      progress_speed > recover_speed_threshold
+    )
+    self._stall_steps = torch.where(
+      stalled,
+      self._stall_steps + 1,
+      torch.where(
+        recovered,
+        torch.zeros_like(self._stall_steps),
+        self._stall_steps,
+      ),
+    )
+    reset_steps = max(1, math.ceil(reset_time / self._step_dt))
+    return self._stall_steps >= reset_steps
+
+  def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+    if env_ids is None:
+      env_ids = slice(None)
+    self._stall_steps[env_ids] = 0
 
 
 def illegal_contact(

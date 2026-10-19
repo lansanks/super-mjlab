@@ -162,6 +162,7 @@ def _make_stair_progress_term(
     "support_clearance_max": 0.05,
     "contact_force_threshold": 10.0,
     "command_threshold": 0.1,
+    "first_step_multiplier": 3.0,
   }
   cfg = SimpleNamespace(params=params)
   term = mdp.stair_climb_progress(cfg=cast(Any, cfg), env=cast(Any, env))
@@ -184,19 +185,20 @@ def test_stair_climb_progress_rewards_each_foot_on_new_height():
     ]
   )
   _set_ground_heights(asset, one_foot_high)
-  torch.testing.assert_close(term(env, **params), torch.tensor([40.0, 0.0]))
+  torch.testing.assert_close(term(env, **params), torch.tensor([120.0, 0.0]))
   torch.testing.assert_close(term(env, **params), torch.zeros(2))
 
   # 另一只脚随后到达同一高度，仍然独立获得一次奖励。
   other_foot_high = torch.tensor([[0.0, 0.20, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
   _set_ground_heights(asset, other_foot_high)
-  torch.testing.assert_close(term(env, **params), torch.tensor([40.0, 0.0]))
+  torch.testing.assert_close(term(env, **params), torch.tensor([120.0, 0.0]))
 
   # 两脚同时继续到达更高层时，两只脚分别得分。
   higher = torch.tensor([[0.40, 0.40, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
   _set_ground_heights(asset, higher)
   torch.testing.assert_close(term(env, **params), torch.tensor([80.0, 0.0]))
   assert contact_sensor.data.found.all()
+  assert env.extras["log"] == {}
 
 
 def test_stair_climb_progress_accumulates_small_gains_and_does_not_repeat():
@@ -209,7 +211,7 @@ def test_stair_climb_progress_accumulates_small_gains_and_does_not_repeat():
   _set_ground_heights(asset, torch.tensor([[0.015, 0.0, 0.0, 0.0]]))
   torch.testing.assert_close(term(env, **params), torch.zeros(1))
   _set_ground_heights(asset, torch.tensor([[0.025, 0.0, 0.0, 0.0]]))
-  torch.testing.assert_close(term(env, **params), torch.tensor([5.0]))
+  torch.testing.assert_close(term(env, **params), torch.tensor([15.0]))
 
   # 停留、下降后回到原高度都不重复给分。
   torch.testing.assert_close(term(env, **params), torch.zeros(1))
@@ -233,7 +235,7 @@ def test_stair_climb_progress_respects_command_and_reset():
       ]
     ),
   )
-  torch.testing.assert_close(term(env, **params), torch.tensor([0.0, 40.0]))
+  torch.testing.assert_close(term(env, **params), torch.tensor([0.0, 120.0]))
 
   # 零指令期间高度变化只同步基线，恢复指令后不能补领。
   command[0, 0] = 1.0
@@ -260,4 +262,138 @@ def test_stair_climb_progress_respects_command_and_reset():
       ]
     ),
   )
-  torch.testing.assert_close(term(env, **params), torch.tensor([40.0, 40.0]))
+  torch.testing.assert_close(term(env, **params), torch.tensor([120.0, 120.0]))
+
+
+def _make_command_stall_term(
+  num_envs: int = 1,
+) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
+  asset = SimpleNamespace(
+    data=SimpleNamespace(root_link_lin_vel_b=torch.zeros(num_envs, 3))
+  )
+  command = torch.tensor([[1.0, 0.0, 0.0]] * num_envs)
+  env = SimpleNamespace(
+    num_envs=num_envs,
+    device="cpu",
+    step_dt=0.02,
+    scene={"robot": asset},
+    command_manager=SimpleNamespace(get_command=lambda name: command),
+    extras={"log": {}},
+  )
+  params = {
+    "command_name": "twist",
+    "asset_cfg": SceneEntityCfg("robot"),
+    "command_threshold": 0.2,
+    "stall_speed_threshold": 0.05,
+    "recover_speed_threshold": 0.1,
+    "command_off_threshold": 0.1,
+    "grace_time": 0.5,
+    "ramp_time": 1.0,
+    "penalty_start": 0.1,
+    "penalty_end": 0.5,
+  }
+  cfg = SimpleNamespace(params=params)
+  term = mdp.command_stall_penalty(cfg=cast(Any, cfg), env=cast(Any, env))
+  return term, env, asset, command, params
+
+
+def test_command_stall_penalty_does_not_trigger_without_command_or_progress():
+  term, env, asset, command, params = _make_command_stall_term(num_envs=2)
+  command[0] = 0.0
+  asset.data.root_link_lin_vel_b[:, 0] = 1.0
+
+  for _ in range(60):
+    torch.testing.assert_close(term(env, **params), torch.zeros(2))
+  assert env.extras["log"] == {}
+
+
+def test_command_stall_penalty_accumulates_from_grace_to_cap():
+  term, env, _, _, params = _make_command_stall_term()
+
+  rewards = []
+  for _ in range(25):
+    rewards.append(term(env, **params))
+  torch.testing.assert_close(rewards[-1], torch.tensor([-5.0]))
+
+  for _ in range(50):
+    rewards.append(term(env, **params))
+  cumulative = torch.stack(rewards).sum(dim=0) * env.step_dt
+  torch.testing.assert_close(cumulative, torch.tensor([-0.5]))
+
+  # 1.5 秒后持续保持 -0.5/s 的惩罚速率。
+  for _ in range(10):
+    torch.testing.assert_close(term(env, **params), torch.tensor([-0.5]))
+
+
+def test_command_stall_penalty_resets_after_progress_without_refund():
+  term, env, asset, _, params = _make_command_stall_term()
+
+  rewards = [term(env, **params) for _ in range(75)]
+  torch.testing.assert_close(
+    torch.stack(rewards).sum(dim=0) * env.step_dt,
+    torch.tensor([-0.5]),
+  )
+
+  asset.data.root_link_lin_vel_b[0, 0] = 1.0
+  torch.testing.assert_close(term(env, **params), torch.zeros(1))
+
+  # 恢复后重新卡住，从宽限期开始重新累计。
+  asset.data.root_link_lin_vel_b[0, 0] = 0.0
+  for _ in range(24):
+    torch.testing.assert_close(term(env, **params), torch.zeros(1))
+  torch.testing.assert_close(term(env, **params), torch.tensor([-5.0]))
+
+
+def _make_command_stall_reset_term(
+  num_envs: int = 1,
+) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
+  asset = SimpleNamespace(
+    data=SimpleNamespace(root_link_lin_vel_b=torch.zeros(num_envs, 3))
+  )
+  command = torch.tensor([[1.0, 0.0, 0.0]] * num_envs)
+  env = SimpleNamespace(
+    num_envs=num_envs,
+    device="cpu",
+    step_dt=0.02,
+    scene={"robot": asset},
+    command_manager=SimpleNamespace(get_command=lambda name: command),
+  )
+  params = {
+    "command_name": "twist",
+    "asset_cfg": SceneEntityCfg("robot"),
+    "command_threshold": 0.2,
+    "stall_speed_threshold": 0.05,
+    "recover_speed_threshold": 0.1,
+    "command_off_threshold": 0.1,
+    "reset_time": 2.5,
+  }
+  cfg = SimpleNamespace(params=params)
+  term = mdp.command_stall_reset(cfg=cast(Any, cfg), env=cast(Any, env))
+  return term, env, asset, command, params
+
+
+def test_command_stall_reset_triggers_at_2_5_seconds():
+  term, env, _, _, params = _make_command_stall_reset_term()
+
+  for _ in range(124):
+    assert not term(env, **params).any()
+  assert term(env, **params).all()
+
+
+def test_command_stall_reset_clears_after_progress_and_reset():
+  term, env, asset, _, params = _make_command_stall_reset_term()
+
+  for _ in range(60):
+    assert not term(env, **params).any()
+
+  asset.data.root_link_lin_vel_b[0, 0] = 1.0
+  assert not term(env, **params).any()
+
+  asset.data.root_link_lin_vel_b[0, 0] = 0.0
+  for _ in range(60):
+    assert not term(env, **params).any()
+
+  term.reset()
+  for _ in range(124):
+    assert not term(env, **params).any()
+  assert term(env, **params).all()

@@ -465,6 +465,23 @@ def make_srma_env_cfg() -> ManagerBasedRlEnvCfg:
         "support_clearance_max": 0.05,
         "contact_force_threshold": 10.0,
         "command_threshold": 0.1,
+        "first_step_multiplier": 5.0,
+      },
+    ),
+    "command_stall_penalty": RewardTermCfg(
+      func=mdp.command_stall_penalty,
+      weight=1.0,
+      params={
+        "command_name": "twist",
+        "asset_cfg": SceneEntityCfg("robot"),
+        "command_threshold": 0.2,
+        "stall_speed_threshold": 0.05,
+        "recover_speed_threshold": 0.1,
+        "command_off_threshold": 0.1,
+        "grace_time": 0.5,
+        "ramp_time": 1.0,
+        "penalty_start": 0.1,
+        "penalty_end": 0.5,
       },
     ),
     "foot_slip": RewardTermCfg(
@@ -494,6 +511,18 @@ def make_srma_env_cfg() -> ManagerBasedRlEnvCfg:
 
   terminations = {
     "time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
+    "command_stall_reset": TerminationTermCfg(
+      func=mdp.command_stall_reset,
+      params={
+        "command_name": "twist",
+        "asset_cfg": SceneEntityCfg("robot"),
+        "command_threshold": 0.2,
+        "stall_speed_threshold": 0.05,
+        "recover_speed_threshold": 0.1,
+        "command_off_threshold": 0.1,
+        "reset_time": 2.5,
+      },
+    ),
     "fell_over": TerminationTermCfg(
       func=mdp.bad_orientation,
       params={"limit_angle": math.radians(70.0)},
