@@ -8,6 +8,13 @@ Upcoming version (not yet released)
 Added
 ^^^^^
 
+- Added the ``Mjlab-SRMA-Student-Rough-Unitree-Go1`` task, which distills the
+  privileged SRMA teacher into a deployable stateful GRU student. The student
+  estimates body velocity and the 16-D external latent from the 45-D actor
+  observation, uses deterministic action means, and is trained with estimator
+  prewarming followed by episode-level teacher/student DAgger. The teacher
+  ratio decays in ten-percent steps to a permanent 20% floor.
+
 - Added ``--fixed-stair-heights`` to the play CLI. It replaces random play
   terrain with fixed ascending staircases and assigns one environment to each
   requested height.

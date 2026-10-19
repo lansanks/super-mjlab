@@ -144,7 +144,7 @@ def test_stair_height_cap_is_srma_only():
   default_stairs = ROUGH_TERRAINS_CFG.sub_terrains["pyramid_stairs"]
   assert isinstance(default_stairs, BoxPyramidStairsTerrainCfg)
   assert default_stairs.step_height_range == (0.0, 0.2)
-  assert cfg.rewards["stair_climb_progress"].params["first_step_multiplier"] == 3.0
+  assert cfg.rewards["stair_climb_progress"].params["first_step_multiplier"] == 5.0
   stall_penalty = cfg.rewards["command_stall_penalty"]
   assert stall_penalty.weight == 1.0
   assert stall_penalty.params["grace_time"] == 0.5

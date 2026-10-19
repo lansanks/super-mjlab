@@ -104,7 +104,14 @@ def test_critic_observation_corruption_always_disabled(all_task_ids: list[str]) 
 
 def test_play_training_observation_structure_match(all_task_ids: list[str]) -> None:
   """Play and training configs should have matching observation structure."""
+  # Privileged-teacher students intentionally keep teacher groups only during
+  # training; their play environment must expose the deployable actor group.
+  teacher_dependent_student_tasks = {
+    "Mjlab-SRMA-Student-Rough-Unitree-Go1",
+  }
   for task_id in all_task_ids:
+    if task_id in teacher_dependent_student_tasks:
+      continue
     training_cfg = load_env_cfg(task_id)
     play_cfg = load_env_cfg(task_id, play=True)
 

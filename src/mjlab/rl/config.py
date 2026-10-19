@@ -63,6 +63,13 @@ class RslRlModelCfg:
   encoder hidden dimensions.
   """
 
+  student_cfg: dict[str, Any] | None = None
+  """SRMA student overrides passed to ``SRMAStudentActorModel``.
+
+  Keys: ``obs_group``, ``velocity_target_group``, ``gru_hidden_dim``,
+  ``gru_num_layers``, ``latent_dim`` and ``velocity_dim``.
+  """
+
 
 @dataclass
 class RslRlPpoAlgorithmCfg:

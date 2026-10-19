@@ -1,0 +1,64 @@
+{
+ "merged_classes": [
+  "stairs",
+  "slope",
+  "rough",
+  "wave"
+ ],
+ "source_groups": {
+  "stairs": [
+   "pyramid_stairs",
+   "pyramid_stairs_inv"
+  ],
+  "slope": [
+   "hf_pyramid_slope",
+   "hf_pyramid_slope_inv"
+  ],
+  "rough": [
+   "random_rough"
+  ],
+  "wave": [
+   "wave_terrain"
+  ]
+ },
+ "perplexity": 30.0,
+ "tsne_iterations": 750,
+ "panels": {
+  "DreamWaQ": {
+   "n": 2856,
+   "chance": 0.25,
+   "pc1_variance": 0.3801713286013278,
+   "pc2_variance": 0.3174085348390309,
+   "effective_rank": 3.4488729188030187,
+   "raw_1nn_terrain": 0.5066526610644257,
+   "raw_5nn_terrain": 0.4565126050420168,
+   "tsne_1nn_terrain": 0.4744397759103641,
+   "tsne_5nn_terrain": 0.446218487394958,
+   "tsne_1nn_environment": 0.10644257703081232
+  },
+  "HIMLoco": {
+   "n": 2856,
+   "chance": 0.25,
+   "pc1_variance": 0.970243524930047,
+   "pc2_variance": 0.027855497675193484,
+   "effective_rank": 1.0614027087531301,
+   "raw_1nn_terrain": 0.38480392156862747,
+   "raw_5nn_terrain": 0.32857142857142857,
+   "tsne_1nn_terrain": 0.35049019607843135,
+   "tsne_5nn_terrain": 0.319047619047619,
+   "tsne_1nn_environment": 0.06372549019607843
+  },
+  "SRMA-Student": {
+   "n": 2856,
+   "chance": 0.25,
+   "pc1_variance": 0.34293782279581053,
+   "pc2_variance": 0.2261811691699918,
+   "effective_rank": 4.5775618047937,
+   "raw_1nn_terrain": 0.5654761904761905,
+   "raw_5nn_terrain": 0.5218487394957984,
+   "tsne_1nn_terrain": 0.5525210084033614,
+   "tsne_5nn_terrain": 0.5149159663865546,
+   "tsne_1nn_environment": 0.08508403361344538
+  }
+ }
+}

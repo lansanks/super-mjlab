@@ -1,0 +1,27 @@
+{
+ "protocol": {
+  "terrain_level": 3,
+  "num_envs": 256,
+  "duration_s": 20,
+  "seed": 20261012,
+  "steps": 1000,
+  "push_period_steps": 50,
+  "him_source": "/home/linkchen/\u684c\u9762/quadruped/mjlab/src/mjlab/tasks/himloco/doc/\u5b9e\u9a8c/\u5b9e\u9a8c\u6570\u636e/stress_test/results.json"
+ },
+ "total_falls_all_conditions": {
+  "student": 541,
+  "him_tau01": 611,
+  "him_tau3": 706
+ },
+ "student_reduction_vs_best_him": 0.11456628477905073,
+ "push4_falls": {
+  "student": 344,
+  "him_tau01": 434,
+  "him_tau3": 479
+ },
+ "push2x_noise4x_falls": {
+  "student": 41,
+  "him_tau01": 21,
+  "him_tau3": 38
+ }
+}

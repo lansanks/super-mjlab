@@ -48,16 +48,19 @@ TASK_BY_KIND = {
   "him": "Mjlab-HIM-Rough-Unitree-Go1",
   "cenet": "Mjlab-DreamWaQ-Rough-Unitree-Go1",
   "srma": "Mjlab-SRMA-Teacher-Rough-Unitree-Go1",
+  "student": "Mjlab-SRMA-Student-Rough-Unitree-Go1",
 }
 DEFAULT_CKPT_BY_KIND = {
   "him": "logs/rsl_rl/go1_himloco/2026-10-16_18-49-56/model_2999.pt",
   "cenet": "logs/rsl_rl/go1_dreamwaq/2026-10-12_16-06-44/model_599.pt",
   "srma": "logs/rsl_rl/go1_srma_teacher/2026-10-18_15-14-45/model_3099.pt",
+  "student": "logs/rsl_rl/go1_srma_student/2026-10-19_18-56-08/model_599.pt",
 }
 LABEL_BY_KIND = {
   "him": "HIM latent l (ours)",
   "cenet": "DreamWaQ CENet mu",
   "srma": "SRMA teacher latent l",
+  "student": "SRMA student latent l_hat",
   "him_isaac": "HIM latent l (Isaac Gym, original)",
 }
 # 评估时需要关掉噪声的观测组（actor 与对应编码器的输入）。
@@ -65,6 +68,7 @@ CLEAN_GROUPS = {
   "him": ("actor", "him_input", "him_state"),
   "cenet": ("actor", "cenet_input"),
   "srma": ("actor",),
+  "student": ("actor",),
 }
 OUTPUT_DIR = pathlib.Path(__file__).resolve().parent
 
@@ -130,6 +134,10 @@ def load_policy(env: RslRlVecEnvWrapper, kind: str, device: str, checkpoint: str
 
 def latent_of(policy, kind: str) -> torch.Tensor:
   """取出上一次 Actor 前向里缓存的隐向量。"""
+  if kind == "student":
+    output = getattr(policy, "last_estimator_output", None)
+    assert output is not None, "Student actor 还没有跑过估计器前向"
+    return output.latent
   if kind == "srma":
     output = getattr(policy, "last_external_output", None)
     assert output is not None, "Actor 还没有跑过 SRMA external encoder"
@@ -173,6 +181,8 @@ def collect_latents(
   contact = env.unwrapped.scene["feet_ground_contact"]
   torch.manual_seed(seed)
   obs, _ = env.reset()
+  if hasattr(policy, "reset"):
+    policy.reset()
   terrain = env.unwrapped.scene.terrain
   assert terrain is not None
   terrain_types = terrain.terrain_types.clone()
@@ -212,6 +222,8 @@ def collect_latents(
         dim=-1,
       )
     obs, _, dones, _ = env.step(actions)
+    if kind == "student" and bool((dones > 0).any()):
+      policy.reset(dones)
     done_ids = (dones > 0).nonzero(as_tuple=False).squeeze(-1)
     if done_ids.numel() > 0:
       alive[done_ids] = False
@@ -446,7 +458,7 @@ def main() -> None:
     "--latent",
     choices=sorted(TASK_BY_KIND),
     default="srma",
-    help="要可视化的隐向量；默认为 SRMA teacher latent",
+    help="要可视化的隐向量；student = SRMA 学生估计器 latent",
   )
   parser.add_argument(
     "--checkpoint", default=None, help="默认按 --latent 取各自 run 的最终 checkpoint"
