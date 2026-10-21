@@ -194,12 +194,23 @@ class DreamwaqActorModel(MLPModel):
     env.cenet_velocity_estimate = torch.zeros(
       env.num_envs, self.cenet.velocity_dim, device=env.device
     )
+    env.cenet_latent_estimate = torch.zeros(
+      env.num_envs, self.cenet.latent_dim, device=env.device
+    )
+    env.cfg.viewer.latent_bar_attr = "cenet_latent_estimate"
+    env.cfg.viewer.latent_bar_label = "DreamWaQ CENet mu"
+    env.cfg.viewer.latent_bar_range = (-3.0, 3.0)
 
   def _publish_velocity_estimate(self, velocity: torch.Tensor) -> None:
     """Mirror the estimate onto the bound play environment (debug only)."""
     env = getattr(self, "_debug_env", None)
     if env is not None:
       env.cenet_velocity_estimate.copy_(velocity.detach())
+
+  def _publish_latent_estimate(self, latent: torch.Tensor) -> None:
+    env = getattr(self, "_debug_env", None)
+    if env is not None:
+      env.cenet_latent_estimate.copy_(latent.detach())
 
   @property
   def last_cenet_output(self) -> CENetOutput:
@@ -245,6 +256,7 @@ class DreamwaqActorModel(MLPModel):
     # live tensors cached above.
     velocity = cenet_output.velocity.detach()
     self._publish_velocity_estimate(velocity)
+    self._publish_latent_estimate(cenet_output.mu.detach())
     # AdaBoot (paper Eq. 8): swap the velocity estimate for the simulated
     # ground truth wherever the AdaBoot mask says so. The mask is absent unless
     # AdaBoot is enabled, which also covers inference where no ground truth

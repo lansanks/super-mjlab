@@ -15,6 +15,24 @@ Added
   prewarming followed by episode-level teacher/student DAgger. The teacher
   ratio decays in ten-percent steps to a permanent 20% floor.
 
+- Added the ``Mjlab-SRMA-Teacher-Rough-Black`` and
+  ``Mjlab-SRMA-Student-Rough-Black`` tasks. Black reuses the 12-DoF SRMA
+  observation layout, teacher encoder, and student GRU, while its environment
+  config wires the Black leg names, mirrored initial pose, per-axis foot
+  friction, collision groups, and actuator delay. Student training requires a
+  Black teacher checkpoint via ``--agent.teacher-checkpoint``. Black uses a
+  12x12 teacher height map matching its larger footprint. Teacher play draws
+  the privileged scan by default instead of the broader critic height scan.
+
+- Expanded Black's joint position ranges to 1.2 times the Go1 ranges, with the
+  right-leg joints mirrored to match the Black MJCF sign convention.
+
+- Added a live 16-D latent heatmap and bar panel to Viser Play for policies that
+  publish a deployable latent vector. SRMA, HiMLoco, and DreamWaQ expose their
+  student/estimator latent for the currently selected environment. Stateful
+  policies now also reset their hidden state when the viewer advances through
+  episode boundaries.
+
 - Added ``--fixed-stair-heights`` to the play CLI. It replaces random play
   terrain with fixed ascending staircases and assigns one environment to each
   requested height.
@@ -103,6 +121,10 @@ Added
 
 Changed
 ^^^^^^^
+
+- Black's calf now uses the Go1-compatible 1.5:1 extra reduction instead of the
+  physical 2.5:1 belt reduction, reducing its reflected inertia, stiffness,
+  damping and torque limit to the Go1 calf values.
 
 - HiMLoco now applies the released implementation's observation scales:
   angular velocity is multiplied by ``0.25``, joint velocity by ``0.05``,

@@ -52,6 +52,8 @@ def test_play_environment_removes_teacher_observations_and_sensor():
     sensor.name for sensor in (cfg.scene.sensors or ())
   }
   assert "push_robot" not in cfg.events
+  assert cfg.viewer.latent_bar_attr == "srma_latent_estimate"
+  assert cfg.viewer.latent_bar_label == "SRMA student l_hat"
 
 
 def test_student_play_runner_builds_and_saves(tmp_path):

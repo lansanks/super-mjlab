@@ -60,17 +60,17 @@
         <geom pos="0.07 0 -0.08" quat="0.3467427097424935 0.6162544171345802 0.6162544006221071 0.34674270045155864" group="1" contype="0" conaffinity="0" material="d435_link_mat" type="mesh" mesh="d435" />
       </body>
       <body name="FL_hip" pos="0.1566 0.060001 -0.06425">
-        <joint name="FL_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-0.5 0.5" damping="0" frictionloss="0"/>
+        <joint name="FL_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-1.0356 1.0356" damping="0" frictionloss="0"/>
         <inertial pos="0.05138 0.014784 0.0000566" mass="0.60559" fullinertia="0.0003742 0.0006493 0.0003415 -0.0000088 0.000001 -1e-7"/>
         <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="FL_hip_mat" type="mesh" mesh="FL_hip" />
         <geom name="FL_hip_collision" pos="0.058 0.055 0" quat="0.707106790659974 0.707106771713121 0 0" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="cylinder" size="0.052 0.055" />
         <body name="FL_thigh" pos="0.056 0.0336 0" quat="0.7071054825112363 0 0 0.7071080798594735">
-          <joint name="FL_thigh_joint" type="hinge" axis="1 0 0" limited="true" range="-1.2 1.6" damping="0" frictionloss="0"/>
+          <joint name="FL_thigh_joint" type="hinge" axis="1 0 0" limited="true" range="-0.8232 5.4012" damping="0" frictionloss="0"/>
           <inertial pos="0.041449 0.004453 -0.021946" mass="0.91168" fullinertia="0.0018577 0.0013983 0.0005179 0 -2e-7 0.0000051"/>
           <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="FL_thigh_mat" type="mesh" mesh="FL_thigh" />
           <geom name="FL_thigh_collision" pos="0.06 0.015 -0.17" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="box" size="0.0175 0.025 0.1025" />
           <body name="FL_calf" pos="0.0618 0 -0.25">
-            <joint name="FL_calf_joint" type="hinge" axis="1 0 0" limited="true" range="-2.5 -0.85" damping="0" frictionloss="0"/>
+            <joint name="FL_calf_joint" type="hinge" axis="1 0 0" limited="true" range="-3.3816 -1.0656" damping="0" frictionloss="0"/>
             <inertial pos="0.0000772 -0.024754 -0.14833" mass="0.24861" fullinertia="0.000929 0.0008561 0.0000889 0 0 -0.0002168"/>
             <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="FL_calf_mat" type="mesh" mesh="FL_calf" />
             <geom name="FL_calf_collision1" pos="0 -0.025 -0.09" quat="0.9843036025039885 -0.1764834782569469 0 0" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="cylinder" size="0.014 0.065" />
@@ -86,17 +86,17 @@
         </body>
       </body>
       <body name="FR_hip" pos="0.1566 -0.059999 -0.06425">
-        <joint name="FR_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-0.5 0.5" damping="0" frictionloss="0"/>
+        <joint name="FR_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-1.0356 1.0356" damping="0" frictionloss="0"/>
         <inertial pos="0.05138 -0.014784 -0.0000566" mass="0.60559" fullinertia="0.0003742 0.0006493 0.0003415 0.0000088 -0.000001 -1e-7"/>
         <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="FR_hip_mat" type="mesh" mesh="FR_hip" />
         <geom name="FR_hip_collision" pos="0.058 -0.055 0" quat="0.707106790659974 0.707106771713121 0 0" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="cylinder" size="0.052 0.055" />
         <body name="FR_thigh" pos="0.056 -0.0336 0" quat="0.7071054825112363 0 0 -0.7071080798594735">
-          <joint name="FR_thigh_joint" type="hinge" axis="1 0 0" limited="true" range="-1.6 1.2" damping="0" frictionloss="0"/>
+          <joint name="FR_thigh_joint" type="hinge" axis="1 0 0" limited="true" range="-5.4012 0.8232" damping="0" frictionloss="0"/>
           <inertial pos="0.04152 -0.0043781 -0.022024" mass="0.91491" fullinertia="0.0018577 0.0013991 0.0005172 -1e-7 -2e-7 -0.0000031"/>
           <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="FR_thigh_mat" type="mesh" mesh="FR_thigh" />
           <geom name="FR_thigh_collision" pos="0.06 -0.015 -0.17" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="box" size="0.0175 0.025 0.1025" />
           <body name="FR_calf" pos="0.0618 0 -0.25">
-            <joint name="FR_calf_joint" type="hinge" axis="1 0 0" limited="true" range="0.85 2.5" damping="0" frictionloss="0"/>
+            <joint name="FR_calf_joint" type="hinge" axis="1 0 0" limited="true" range="1.0656 3.3816" damping="0" frictionloss="0"/>
             <inertial pos="-0.0000772 0.024754 -0.14833" mass="0.24861" fullinertia="0.000929 0.0008561 0.0000889 0 0 0.0002168"/>
             <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="FR_calf_mat" type="mesh" mesh="FR_calf" />
             <geom name="FR_calf_collision1" pos="0 0.025 -0.09" quat="0.9843036025039885 0.1764834782569469 0 0" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="cylinder" size="0.014 0.065" />
@@ -112,17 +112,17 @@
         </body>
       </body>
       <body name="RR_hip" pos="-0.1566 -0.059999 -0.06425" quat="-0.000003673205103346574 0 0 -0.9999999999932537">
-        <joint name="RR_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-0.5 0.5" damping="0" frictionloss="0"/>
+        <joint name="RR_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-1.0356 1.0356" damping="0" frictionloss="0"/>
         <inertial pos="0.05138 0.014784 0.0000566" mass="0.60559" fullinertia="0.0003742 0.0006493 0.0003415 -0.0000088 0.000001 -1e-7"/>
         <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="RR_hip_mat" type="mesh" mesh="RR_hip" />
         <geom name="RR_hip_collision" pos="0.058 0.055 0" quat="0.707106790659974 0.707106771713121 0 0" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="cylinder" size="0.052 0.055" />
         <body name="RR_thigh" pos="0.056 0.0336 0" quat="0.7071054825112363 0 0 0.7071080798594735">
-          <joint name="RR_thigh_joint" type="hinge" axis="1 0 0" limited="true" range="-1.6 1.2" damping="0" frictionloss="0"/>
+          <joint name="RR_thigh_joint" type="hinge" axis="1 0 0" limited="true" range="-5.4012 0.8232" damping="0" frictionloss="0"/>
           <inertial pos="0.04152 -0.0043784 -0.022024" mass="0.91491" fullinertia="0.0018577 0.0013991 0.0005172 -1e-7 -2e-7 -0.0000031"/>
           <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="RR_thigh_mat" type="mesh" mesh="RR_thigh" />
           <geom name="RR_thigh_collision" pos="0.06 -0.015 -0.17" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="box" size="0.0175 0.025 0.1025" />
           <body name="RR_calf" pos="0.0618 0 -0.25">
-            <joint name="RR_calf_joint" type="hinge" axis="1 0 0" limited="true" range="0.85 2.5" damping="0" frictionloss="0"/>
+            <joint name="RR_calf_joint" type="hinge" axis="1 0 0" limited="true" range="1.0656 3.3816" damping="0" frictionloss="0"/>
             <inertial pos="-0.0000772 0.024754 -0.14833" mass="0.24861" fullinertia="0.000929 0.0008561 0.0000889 0 0 0.0002168"/>
             <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="RR_calf_mat" type="mesh" mesh="RR_calf" />
             <geom name="RR_calf_collision1" pos="0 0.025 -0.09" quat="0.9843036025039885 0.1764834782569469 0 0" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="cylinder" size="0.014 0.065" />
@@ -138,17 +138,17 @@
         </body>
       </body>
       <body name="RL_hip" pos="-0.1566 0.060001 -0.06425" quat="-0.000003673205103346574 0 0 -0.9999999999932537">
-        <joint name="RL_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-0.5 0.5" damping="0" frictionloss="0"/>
+        <joint name="RL_hip_joint" type="hinge" axis="1 0 0" limited="true" range="-1.0356 1.0356" damping="0" frictionloss="0"/>
         <inertial pos="0.05138 -0.014784 -0.0000566" mass="0.60559" fullinertia="0.0003742 0.0006493 0.0003415 0.0000088 -0.000001 -1e-7"/>
         <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="RL_hip_mat" type="mesh" mesh="RL_hip" />
         <geom name="RL_hip_collision" pos="0.058 -0.055 0" quat="0.707106790659974 0.707106771713121 0 0" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="cylinder" size="0.052 0.055" />
         <body name="RL_thigh" pos="0.056 -0.0336 0" quat="0.7071054825112363 0 0 -0.7071080798594735">
-          <joint name="RL_thigh_joint" type="hinge" axis="1 0 0" limited="true" range="-1.2 1.6" damping="0" frictionloss="0"/>
+          <joint name="RL_thigh_joint" type="hinge" axis="1 0 0" limited="true" range="-0.8232 5.4012" damping="0" frictionloss="0"/>
           <inertial pos="0.041449 0.0044527 -0.021947" mass="0.91168" fullinertia="0.0018577 0.0013983 0.0005179 0 -2e-7 0.0000051"/>
           <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="RL_thigh_mat" type="mesh" mesh="RL_thigh" />
           <geom name="RL_thigh_collision" pos="0.06 0.015 -0.17" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="box" size="0.0175 0.025 0.1025" />
           <body name="RL_calf" pos="0.0618 0 -0.25">
-            <joint name="RL_calf_joint" type="hinge" axis="1 0 0" limited="true" range="-2.5 -0.85" damping="0" frictionloss="0"/>
+            <joint name="RL_calf_joint" type="hinge" axis="1 0 0" limited="true" range="-3.3816 -1.0656" damping="0" frictionloss="0"/>
             <inertial pos="0.0000772 -0.024754 -0.14833" mass="0.24861" fullinertia="0.000929 0.0008561 0.0000889 0 0 -0.0002168"/>
             <geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="RL_calf_mat" type="mesh" mesh="RL_calf" />
             <geom name="RL_calf_collision1" pos="0 -0.025 -0.09" quat="0.9843036025039885 -0.1764834782569469 0 0" rgba="0.9372549019607843 0.26666666666666666 0.26666666666666666 1" group="3" contype="1" conaffinity="1" type="cylinder" size="0.014 0.065" />

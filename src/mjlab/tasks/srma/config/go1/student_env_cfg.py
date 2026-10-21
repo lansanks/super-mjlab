@@ -28,4 +28,7 @@ def unitree_go1_srma_student_env_cfg(
   cfg.scene.sensors = tuple(
     sensor for sensor in (cfg.scene.sensors or ()) if sensor.name != "srma_teacher_scan"
   )
+  cfg.viewer.latent_bar_attr = "srma_latent_estimate"
+  cfg.viewer.latent_bar_label = "SRMA student l_hat"
+  cfg.viewer.latent_bar_range = (-3.0, 3.0)
   return cfg

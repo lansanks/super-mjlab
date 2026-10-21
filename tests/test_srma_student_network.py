@@ -1,5 +1,7 @@
 """Tests for the deployable SRMA student actor."""
 
+from types import SimpleNamespace
+
 import torch
 from tensordict import TensorDict
 
@@ -88,6 +90,18 @@ def test_student_outputs_and_hidden_shapes():
   assert output.actor_mean.shape == (NUM_ENVS, ACTION_DIM)
   assert student.get_hidden_state().shape == (1, NUM_ENVS, HIDDEN_DIM)
   assert output.latent.norm(dim=-1).shape == (NUM_ENVS,)
+
+
+def test_bound_env_receives_latent_and_velocity_estimates():
+  student = make_student()
+  env = SimpleNamespace(num_envs=NUM_ENVS, device="cpu")
+  student.bind_debug_env(env)
+  assert env.srma_latent_estimate.shape == (NUM_ENVS, LATENT_DIM)
+  assert env.srma_velocity_estimate.shape == (NUM_ENVS, 3)
+
+  output = student.forward_deterministic(make_obs())
+  torch.testing.assert_close(env.srma_latent_estimate, output.latent)
+  torch.testing.assert_close(env.srma_velocity_estimate, output.velocity)
 
 
 def test_hidden_resets_only_for_done_environments():

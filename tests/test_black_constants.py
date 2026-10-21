@@ -46,11 +46,11 @@ def test_actuator_parameters(black_model, actuator_config, stiffness, damping):
 
 
 def test_knee_actuator_scales_with_belt_ratio() -> None:
-  """The extra 2.5:1 calf reduction trades speed for torque."""
+  """The extra 1.5:1 calf reduction trades speed for torque."""
   hip, knee = black_constants.HIP_ACTUATOR, black_constants.KNEE_ACTUATOR
-  assert knee.effort_limit == pytest.approx(hip.effort_limit * 2.5)
-  assert knee.velocity_limit == pytest.approx(hip.velocity_limit / 2.5)
-  assert knee.reflected_inertia == pytest.approx(hip.reflected_inertia * 2.5**2)
+  assert knee.effort_limit == pytest.approx(hip.effort_limit * 1.5)
+  assert knee.velocity_limit == pytest.approx(hip.velocity_limit / 1.5)
+  assert knee.reflected_inertia == pytest.approx(hip.reflected_inertia * 1.5**2)
 
 
 def test_keyframe_joint_positions(black_entity, black_model) -> None:
@@ -72,6 +72,37 @@ def test_keyframe_joint_positions(black_entity, black_model) -> None:
       err_msg=f"Joint {joint_name} position mismatch: "
       f"expected {expected_value}, got {actual_value}",
     )
+
+
+@pytest.mark.parametrize(
+  ("joint_name", "expected_range"),
+  [
+    ("FL_hip_joint", (-1.0356, 1.0356)),
+    ("FR_hip_joint", (-1.0356, 1.0356)),
+    ("RR_hip_joint", (-1.0356, 1.0356)),
+    ("RL_hip_joint", (-1.0356, 1.0356)),
+    ("FL_thigh_joint", (-0.8232, 5.4012)),
+    ("RL_thigh_joint", (-0.8232, 5.4012)),
+    ("FR_thigh_joint", (-5.4012, 0.8232)),
+    ("RR_thigh_joint", (-5.4012, 0.8232)),
+    ("FL_calf_joint", (-3.3816, -1.0656)),
+    ("RL_calf_joint", (-3.3816, -1.0656)),
+    ("FR_calf_joint", (1.0656, 3.3816)),
+    ("RR_calf_joint", (1.0656, 3.3816)),
+  ],
+)
+def test_joint_ranges_are_1_2x_go1(
+  black_model: mujoco.MjModel,
+  joint_name: str,
+  expected_range: tuple[float, float],
+) -> None:
+  """Black uses 1.2x the Go1 joint range with mirrored right-leg signs."""
+  joint_id = black_model.joint(joint_name).id
+  np.testing.assert_allclose(
+    black_model.jnt_range[joint_id],
+    expected_range,
+    atol=1e-6,
+  )
 
 
 def test_default_pose_stands_on_the_ground(black_model) -> None:

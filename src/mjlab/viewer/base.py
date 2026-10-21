@@ -288,7 +288,17 @@ class BaseViewer(ABC):
       with torch.no_grad():
         obs = self.env.get_observations()
         actions = self.policy(obs)
-        self.env.step(actions)
+        result = self.env.step(actions)
+        if len(result) >= 3:
+          dones = torch.as_tensor(result[2])
+          reset_fn = getattr(self.policy, "reset", None)
+          if (
+            callable(reset_fn)
+            and getattr(self.policy, "is_recurrent", False)
+            and dones.numel() > 0
+            and bool(dones.any())
+          ):
+            reset_fn(dones)
         self._step_count += 1
         self._stats_steps += 1
         return True

@@ -11,10 +11,12 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import mujoco
+import torch
 import viser
 
 from mjlab.sensor import CameraSensor
 from mjlab.viewer.viser.camera_viewer import ViserCameraViewer
+from mjlab.viewer.viser.latent_bar_panel import LatentBarPanel
 from mjlab.viewer.viser.reward_bar_panel import RewardBarPanel
 from mjlab.viewer.viser.term_plotter import ViserTermPlotter
 
@@ -50,6 +52,8 @@ class ViserTermOverlays:
   reward_plotter: ViserTermPlotter | None = None
   reward_bar_panel: RewardBarPanel | None = None
   metrics_plotter: ViserTermPlotter | None = None
+  latent_bar_panel: LatentBarPanel | None = None
+  latent_bar_attr: str | None = None
 
   def setup_tabs(self, tabs: Any) -> None:
     """Create rewards/metrics tabs based on available managers."""
@@ -85,6 +89,25 @@ class ViserTermOverlays:
             self.server, term_names, name="Metric", env_idx=self.scene.env_idx
           )
 
+    viewer_cfg = self.env.unwrapped.cfg.viewer
+    latent_attr = getattr(viewer_cfg, "latent_bar_attr", None)
+    if latent_attr and hasattr(self.env.unwrapped, latent_attr):
+      configured_range = tuple(
+        getattr(viewer_cfg, "latent_bar_range", (-3.0, 3.0))
+      )
+      if len(configured_range) != 2:
+        raise ValueError(
+          "latent_bar_range must contain exactly two values, got "
+          f"{configured_range}."
+        )
+      with tabs.add_tab("Latent", icon=viser.Icon.CHART_BAR):
+        self.latent_bar_panel = LatentBarPanel(
+          self.server,
+          label=str(getattr(viewer_cfg, "latent_bar_label", "Latent")),
+          value_range=(configured_range[0], configured_range[1]),
+        )
+        self.latent_bar_attr = str(latent_attr)
+
   def on_env_switch(self) -> None:
     """Clear histories when active environment changes."""
     env_idx = self.scene.env_idx
@@ -96,6 +119,8 @@ class ViserTermOverlays:
     if self.metrics_plotter:
       self.metrics_plotter.clear_histories()
       self.metrics_plotter.update_env_idx(env_idx)
+    if self.latent_bar_panel:
+      self.latent_bar_panel.clear()
 
   def update(self, paused: bool) -> None:
     """Update term plots from the selected environment."""
@@ -116,6 +141,13 @@ class ViserTermOverlays:
       )
       self.metrics_plotter.update(terms)
 
+    if self.latent_bar_panel is not None and self.latent_bar_attr is not None:
+      values = getattr(self.env.unwrapped, self.latent_bar_attr, None)
+      if isinstance(values, torch.Tensor):
+        values = values.detach().cpu().numpy()
+      if values is not None and len(values) > self.scene.env_idx:
+        self.latent_bar_panel.update(values[self.scene.env_idx], self.scene.env_idx)
+
   def clear_histories(self) -> None:
     """Clear all overlay histories."""
     self.on_env_switch()
@@ -128,6 +160,8 @@ class ViserTermOverlays:
       self.reward_bar_panel.cleanup()
     if self.metrics_plotter:
       self.metrics_plotter.cleanup()
+    if self.latent_bar_panel:
+      self.latent_bar_panel.cleanup()
 
 
 @dataclass

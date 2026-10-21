@@ -10,6 +10,7 @@ from mjlab.scripts.play import (
   _configure_fixed_stair_play,
   _normalize_fixed_stair_args,
 )
+from mjlab.sensor import RayCastSensorCfg
 from mjlab.tasks.srma import mdp
 from mjlab.tasks.srma.config.go1.env_cfg import (
   unitree_go1_srma_env_cfg,
@@ -156,6 +157,17 @@ def test_stair_height_cap_is_srma_only():
 def test_play_mode_has_enough_contact_capacity():
   assert unitree_go1_srma_env_cfg().sim.nconmax == 35
   assert unitree_go1_srma_env_cfg(play=True).sim.nconmax == 128
+
+
+def test_play_shows_privileged_teacher_scan():
+  cfg = unitree_go1_srma_env_cfg(play=True)
+  sensors = {sensor.name: sensor for sensor in (cfg.scene.sensors or ())}
+  terrain_scan = sensors["terrain_scan"]
+  teacher_scan = sensors["srma_teacher_scan"]
+  assert isinstance(terrain_scan, RayCastSensorCfg)
+  assert isinstance(teacher_scan, RayCastSensorCfg)
+  assert not terrain_scan.debug_vis
+  assert teacher_scan.debug_vis
 
 
 def test_fixed_stair_play_uses_one_environment_per_height():

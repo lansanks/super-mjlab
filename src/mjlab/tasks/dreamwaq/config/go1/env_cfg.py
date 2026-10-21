@@ -246,6 +246,9 @@ def unitree_go1_dreamwaq_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   if play:
     # Effectively infinite episode length.
     cfg.episode_length_s = int(1e9)
+    cfg.viewer.latent_bar_attr = "cenet_latent_estimate"
+    cfg.viewer.latent_bar_label = "DreamWaQ CENet mu"
+    cfg.viewer.latent_bar_range = (-3.0, 3.0)
 
     # Keep both the policy observation and the CENet history clean at play time.
     cfg.observations["actor"].enable_corruption = False

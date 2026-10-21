@@ -1,10 +1,13 @@
 """Numerical tests for the HIM estimator and actor."""
 
+from types import SimpleNamespace
+
 import torch
 from tensordict import TensorDict
 
 from mjlab.tasks.himloco.rl.network.actor import HimActorModel
 from mjlab.tasks.himloco.rl.network.estimator import HIMEstimator, sinkhorn
+from mjlab.viewer.viewer_config import ViewerConfig
 
 NUM_ENVS = 4
 OBS_DIM = 6
@@ -84,6 +87,22 @@ def test_estimator_shapes_and_normalization():
   flat_velocity, flat_latent = estimator.encode_history(history.flatten(1))
   assert torch.allclose(velocity, flat_velocity, atol=1e-6)
   assert torch.allclose(latent, flat_latent, atol=1e-6)
+
+
+def test_actor_publishes_latent_and_viewer_config():
+  actor = make_actor()
+  env = SimpleNamespace(
+    num_envs=NUM_ENVS,
+    device="cpu",
+    cfg=SimpleNamespace(viewer=ViewerConfig()),
+  )
+  actor.bind_debug_env(env)
+  actor(make_obs())
+  output = actor.last_him_output
+  assert output is not None
+  torch.testing.assert_close(env.him_latent_estimate, output.latent)
+  assert env.cfg.viewer.latent_bar_attr == "him_latent_estimate"
+  assert env.cfg.viewer.latent_bar_range == (-1.0, 1.0)
 
 
 def test_history_is_converted_to_newest_first():

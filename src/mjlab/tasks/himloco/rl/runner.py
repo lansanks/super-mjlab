@@ -1,6 +1,7 @@
 """Runner for the HIM tasks (checkpointing plus ONNX policy export)."""
 
 import wandb
+from rsl_rl.models import MLPModel
 from rsl_rl.utils import WandbLogWriter
 
 from mjlab.rl import RslRlVecEnvWrapper
@@ -14,6 +15,12 @@ from mjlab.tasks.himloco.rl.network.actor import HimActorModel
 
 class HimOnPolicyRunner(MjlabOnPolicyRunner):
   env: RslRlVecEnvWrapper
+
+  def get_inference_policy(self, device: str | None = None) -> MLPModel:
+    policy = super().get_inference_policy(device)
+    if isinstance(policy, HimActorModel):
+      policy.bind_debug_env(self.env.unwrapped)
+    return policy
 
   def save(self, path: str, infos=None):
     super().save(path, infos)

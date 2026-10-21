@@ -233,6 +233,9 @@ def unitree_go1_him_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
   if play:
     cfg.episode_length_s = int(1e9)
+    cfg.viewer.latent_bar_attr = "him_latent_estimate"
+    cfg.viewer.latent_bar_label = "HIM latent l"
+    cfg.viewer.latent_bar_range = (-1.0, 1.0)
     for group in ("actor", "him_input", "him_state"):
       cfg.observations[group].enable_corruption = False
     cfg.events.pop("push_robot", None)

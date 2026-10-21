@@ -89,10 +89,46 @@ def unitree_go1_srma_student_dagger_runner_cfg(
   max_iterations: int = 500,
 ) -> RslRlSRMAStudentRunnerCfg:
   """Create the Unitree Go1 SRMA student training configuration."""
-  return RslRlSRMAStudentRunnerCfg(
-    obs_groups={"actor": ("actor",)},
+  return _srma_student_dagger_runner_cfg(
     experiment_name="go1_srma_student",
+    teacher_checkpoint=DEFAULT_TEACHER_CHECKPOINT,
+    max_iterations=max_iterations,
+  )
+
+
+def black_srma_student_dagger_runner_cfg(
+  teacher_checkpoint: str = "",
+  max_iterations: int = 500,
+  height_shape: tuple[int, int] = (11, 9),
+) -> RslRlSRMAStudentRunnerCfg:
+  """Create the Black SRMA student training configuration.
+
+  The teacher checkpoint must come from a Black SRMA teacher run. It is left
+  empty by default so the task cannot silently load Go1 weights.
+  """
+  return _srma_student_dagger_runner_cfg(
+    experiment_name="black_srma_student",
+    teacher_checkpoint=teacher_checkpoint,
+    max_iterations=max_iterations,
+    height_shape=height_shape,
+  )
+
+
+def _srma_student_dagger_runner_cfg(
+  experiment_name: str,
+  teacher_checkpoint: str,
+  max_iterations: int,
+  height_shape: tuple[int, int] = (11, 9),
+) -> RslRlSRMAStudentRunnerCfg:
+  cfg = RslRlSRMAStudentRunnerCfg(
+    obs_groups={"actor": ("actor",)},
+    experiment_name=experiment_name,
+    teacher_checkpoint=teacher_checkpoint,
     save_interval=50,
     num_steps_per_env=50,
     max_iterations=max_iterations,
   )
+  if cfg.teacher.srma_cfg is None:
+    raise ValueError("SRMA student teacher config must define srma_cfg.")
+  cfg.teacher.srma_cfg["height_shape"] = height_shape
+  return cfg

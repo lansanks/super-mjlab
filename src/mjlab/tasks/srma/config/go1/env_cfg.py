@@ -270,6 +270,16 @@ def unitree_go1_srma_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     # unchanged to avoid raising memory usage across 4096 environments.
     cfg.sim.nconmax = 128
 
+    # Show the privileged teacher sampling grid instead of the broader critic
+    # height scan in Viser. This only changes play-time debug rendering.
+    for sensor in cfg.scene.sensors or ():
+      if sensor.name == "terrain_scan":
+        assert isinstance(sensor, RayCastSensorCfg)
+        sensor.debug_vis = False
+      elif sensor.name == "srma_teacher_scan":
+        assert isinstance(sensor, RayCastSensorCfg)
+        sensor.debug_vis = True
+
     # Keep the deployable policy observation clean at play time.
     cfg.observations["actor"].enable_corruption = False
     cfg.events.pop("push_robot", None)

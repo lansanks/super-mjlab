@@ -18,6 +18,7 @@ optimizer inside ``HimPPO`` (the released implementation does the same, see
 from __future__ import annotations
 
 import copy
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -182,6 +183,21 @@ class HimActorModel(MLPModel):
     """
     return self._last_him_output
 
+  def bind_debug_env(self, env: Any) -> None:
+    """Publish the implicit response for the play-time latent panel."""
+    self._debug_env = env
+    env.him_latent_estimate = torch.zeros(
+      env.num_envs, self.estimator.latent_dim, device=env.device
+    )
+    env.cfg.viewer.latent_bar_attr = "him_latent_estimate"
+    env.cfg.viewer.latent_bar_label = "HIM latent l"
+    env.cfg.viewer.latent_bar_range = (-1.0, 1.0)
+
+  def _publish_latent_estimate(self, latent: torch.Tensor) -> None:
+    env = getattr(self, "_debug_env", None)
+    if env is not None:
+      env.him_latent_estimate.copy_(latent.detach())
+
   def _get_latent_dim(self) -> int:
     """Dimension of the policy input: ``[o_t, v_hat, l]``."""
     return self.obs_dim + self._him_extra_dim
@@ -204,6 +220,7 @@ class HimActorModel(MLPModel):
     with torch.no_grad():
       output = self.estimator(self._him_history(obs))
     self._last_him_output = output
+    self._publish_latent_estimate(output.latent)
     return torch.cat((proprio, output.velocity, output.latent), dim=-1)
 
   def as_onnx(self, verbose: bool) -> nn.Module:

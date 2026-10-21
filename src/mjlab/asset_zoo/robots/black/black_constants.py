@@ -37,9 +37,9 @@ ROTOR_INERTIA = 0.000111842
 # Gearbox. The GO-M8010-6 datasheet lists a 6.33:1 rotor-to-output reduction
 # while the Go1 config rounds it to 6; the resulting ~11% shift in reflected
 # inertia sits inside the domain-randomization band, so Black stays aligned with
-# the Go1. The knee adds a 2.5:1 belt reduction on top (the Go1 uses 1.5:1).
+# the Go1. The calf uses the same 1.5:1 extra reduction as the Go1.
 HIP_GEAR_RATIO = 6
-KNEE_GEAR_RATIO = HIP_GEAR_RATIO * 2.5
+KNEE_GEAR_RATIO = HIP_GEAR_RATIO * 1.5
 
 HIP_ACTUATOR = ElectricActuator(
   reflected_inertia=reflected_inertia(ROTOR_INERTIA, HIP_GEAR_RATIO),
@@ -50,8 +50,8 @@ HIP_ACTUATOR = ElectricActuator(
 # ratings (23.7 N*m, 30 rad/s) by the belt ratio.
 KNEE_ACTUATOR = ElectricActuator(
   reflected_inertia=reflected_inertia(ROTOR_INERTIA, KNEE_GEAR_RATIO),
-  velocity_limit=30.1 / 2.5,
-  effort_limit=23.7 * 2.5,
+  velocity_limit=30.1 / 1.5,
+  effort_limit=23.7 * 1.5,
 )
 
 NATURAL_FREQ = 10 * 2.0 * 3.1415926535  # 10Hz

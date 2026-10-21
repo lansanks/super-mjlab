@@ -44,6 +44,18 @@ class ViewerConfig:
   Terms beyond this limit are dropped (with a warning). Raise it for
   environments with many reward terms."""
 
+  latent_bar_attr: str | None = None
+  """Environment attribute containing a deployable latent vector.
+
+  When set and present on the unwrapped environment, the Viser viewer creates
+  a live bar/heatmap panel for the currently selected environment."""
+
+  latent_bar_label: str = "Latent"
+  """Display label for the latent bar panel."""
+
+  latent_bar_range: tuple[float, float] = (-3.0, 3.0)
+  """Fixed display range used by the latent bar panel."""
+
   # Camera placement.
   distance: float = 5.0
   elevation: float = -45.0

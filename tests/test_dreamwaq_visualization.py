@@ -21,6 +21,7 @@ from mjlab.tasks.dreamwaq.config.go1.rl_cfg import (
 from mjlab.tasks.dreamwaq.rl.network.actor import DreamwaqActorModel
 from mjlab.tasks.dreamwaq.rl.runner import DreamwaqOnPolicyRunner
 from mjlab.viewer.debug_visualizer import NullDebugVisualizer
+from mjlab.viewer.viewer_config import ViewerConfig
 
 PREDICTED_COLOR = (1.0, 0.2, 0.8, 0.8)
 
@@ -91,13 +92,24 @@ def make_actor(
 
 def test_model_publishes_velocity_estimate_to_bound_env():
   actor = make_actor()
-  env = SimpleNamespace(num_envs=2, device="cpu")
+  env = SimpleNamespace(
+    num_envs=2,
+    device="cpu",
+    cfg=SimpleNamespace(viewer=ViewerConfig()),
+  )
   actor.bind_debug_env(env)
   assert env.cenet_velocity_estimate.shape == (2, 3)
   assert not env.cenet_velocity_estimate.any()
+  assert env.cenet_latent_estimate.shape == (2, 16)
 
   actor(make_obs())
   assert torch.allclose(env.cenet_velocity_estimate, actor.last_cenet_output.velocity)
+  torch.testing.assert_close(
+    env.cenet_latent_estimate,
+    actor.last_cenet_output.mu.detach(),
+  )
+  assert env.cfg.viewer.latent_bar_attr == "cenet_latent_estimate"
+  assert env.cfg.viewer.latent_bar_range == (-3.0, 3.0)
 
 
 def test_command_term_draws_predicted_velocity_arrow(play_env):

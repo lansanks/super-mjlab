@@ -107,6 +107,7 @@ def test_play_training_observation_structure_match(all_task_ids: list[str]) -> N
   # Privileged-teacher students intentionally keep teacher groups only during
   # training; their play environment must expose the deployable actor group.
   teacher_dependent_student_tasks = {
+    "Mjlab-SRMA-Student-Rough-Black",
     "Mjlab-SRMA-Student-Rough-Unitree-Go1",
   }
   for task_id in all_task_ids:

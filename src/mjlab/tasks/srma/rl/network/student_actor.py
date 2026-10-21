@@ -156,16 +156,24 @@ class SRMAStudentActorModel(MLPModel):
     return self._last_estimator_output
 
   def bind_debug_env(self, env: Any) -> None:
-    """Publish the latest velocity estimate for the play viewer."""
+    """Publish estimates for play-time viewer overlays."""
     self._debug_env = env
     env.srma_velocity_estimate = torch.zeros(
       env.num_envs, self.velocity_dim, device=env.device
+    )
+    env.srma_latent_estimate = torch.zeros(
+      env.num_envs, self.latent_dim, device=env.device
     )
 
   def _publish_velocity_estimate(self, velocity: torch.Tensor) -> None:
     env = getattr(self, "_debug_env", None)
     if env is not None:
       env.srma_velocity_estimate.copy_(velocity.detach())
+
+  def _publish_latent_estimate(self, latent: torch.Tensor) -> None:
+    env = getattr(self, "_debug_env", None)
+    if env is not None:
+      env.srma_latent_estimate.copy_(latent.detach())
 
   def _get_latent_dim(self) -> int:
     return self.obs_dim + self._velocity_dim + self._latent_dim
@@ -212,6 +220,7 @@ class SRMAStudentActorModel(MLPModel):
     self._last_estimator_output = output
     self._last_normalized_observation = normalized
     self._publish_velocity_estimate(output.velocity)
+    self._publish_latent_estimate(output.latent)
     return output
 
   def forward_deterministic(self, obs: TensorDict) -> SRMAStudentStepOutput:
