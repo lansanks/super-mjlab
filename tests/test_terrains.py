@@ -9,6 +9,7 @@ import pytest
 from mjlab.terrains.config import ALL_TERRAIN_PRESETS
 from mjlab.terrains.primitive_terrains import (
   _MIN_BORDER_HEIGHT,
+  BoxBrokenBridgeTerrainCfg,
   BoxInvertedPyramidStairsTerrainCfg,
   BoxPyramidStairsTerrainCfg,
   BoxSteppingStonesTerrainCfg,
@@ -88,6 +89,56 @@ def test_stone_size_decreases_with_difficulty():
     sizes[difficulty] = np.mean([hx + hy for _, _, hx, hy in stones])
 
   assert sizes[0.0] > sizes[1.0]
+
+
+def test_broken_bridge_gap_width_and_deck_spacing():
+  cfg = BoxBrokenBridgeTerrainCfg(
+    size=(8.0, 8.0),
+    gap_width_range=(0.10, 0.35),
+    num_gaps=4,
+    bridge_width=1.0,
+    deck_between_gaps=1.2,
+    end_platform_width=1.0,
+    pit_depth=1.0,
+  )
+  for gap_width in (0.10, 0.225, 0.35):
+    intervals = cfg._deck_intervals(gap_width)
+    assert len(intervals) == cfg.num_gaps + 1
+    expected_end_length = 0.5 * (
+      cfg.size[0]
+      - cfg.num_gaps * gap_width
+      - (cfg.num_gaps - 1) * cfg.deck_between_gaps
+    )
+    assert np.isclose(intervals[0][0], 0.0)
+    assert np.isclose(intervals[-1][1], cfg.size[0])
+    assert np.isclose(intervals[0][1] - intervals[0][0], expected_end_length)
+    assert np.isclose(intervals[-1][1] - intervals[-1][0], expected_end_length)
+    for left, right in zip(intervals[:-1], intervals[1:], strict=True):
+      assert np.isclose(right[0] - left[1], gap_width)
+    for interval in intervals[1:-1]:
+      assert np.isclose(interval[1] - interval[0], 1.2)
+
+
+def test_broken_bridge_geometry_compiles_at_course_extremes():
+  cfg = BoxBrokenBridgeTerrainCfg(size=(8.0, 8.0))
+  for difficulty in (0.0, 1.0):
+    spec = mujoco.MjSpec()
+    spec.worldbody.add_body(name="terrain")
+    output = cfg.function(
+      difficulty=difficulty,
+      spec=spec,
+      rng=np.random.default_rng(0),
+    )
+    assert output.geometries
+    deck_geoms = [
+      info.geom
+      for info in output.geometries
+      if info.geom is not None and np.isclose(info.geom.pos[2], -0.05)
+    ]
+    assert len(deck_geoms) == cfg.num_gaps + 1
+    for geom in deck_geoms:
+      assert np.isclose(geom.size[1], cfg.size[1] / 2.0)
+    spec.compile()
 
 
 @pytest.mark.parametrize(

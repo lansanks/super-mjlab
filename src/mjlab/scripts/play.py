@@ -113,6 +113,8 @@ class PlayConfig:
   viewer: Literal["auto", "native", "viser"] = "auto"
   fixed_stair_heights: str = ""
   """Use fixed ascending stair heights in meters instead of random play terrain."""
+  terrain_type: str | None = None
+  """Spawn all play environments on this named curriculum sub-terrain."""
   no_terminations: bool = False
   """Disable all termination conditions (useful for viewing motions with dummy agents)."""
   log_root: str = "logs/rsl_rl"
@@ -120,6 +122,37 @@ class PlayConfig:
 
   # Internal flag used by demo script.
   _demo_mode: tyro.conf.Suppress[bool] = False
+
+
+def _configure_play_terrain(
+  env: ManagerBasedRlEnv,
+  terrain_type: str,
+) -> None:
+  """Place every play environment on one named curriculum terrain column."""
+  terrain = env.scene.terrain
+  if terrain is None or terrain.cfg.terrain_type != "generator":
+    raise ValueError(
+      f"--terrain-type requires generated terrain, got "
+      f"{None if terrain is None else terrain.cfg.terrain_type!r}."
+    )
+  generator = terrain.cfg.terrain_generator
+  if generator is None or terrain.terrain_origins is None:
+    raise ValueError("--terrain-type requires terrain origins.")
+  if not generator.curriculum:
+    raise ValueError("--terrain-type requires curriculum terrain mode.")
+
+  terrain_names = list(generator.sub_terrains)
+  if terrain_type not in terrain_names:
+    raise ValueError(
+      f"Unknown terrain type '{terrain_type}'. Available: {terrain_names}."
+    )
+
+  column = terrain_names.index(terrain_type)
+  terrain.terrain_types[:] = column
+  terrain.env_origins[:] = terrain.terrain_origins[
+    terrain.terrain_levels,
+    terrain.terrain_types,
+  ]
 
 
 def run_play(task_id: str, cfg: PlayConfig):
@@ -235,6 +268,8 @@ def run_play(task_id: str, cfg: PlayConfig):
       "[WARN] Video recording with dummy agents is disabled (no checkpoint/log_dir)."
     )
   env = ManagerBasedRlEnv(cfg=env_cfg, device=device, render_mode=render_mode)
+  if cfg.terrain_type is not None:
+    _configure_play_terrain(env, cfg.terrain_type)
 
   if TRAINED_MODE and cfg.video:
     print("[INFO] Recording videos during play")

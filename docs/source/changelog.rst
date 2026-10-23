@@ -8,6 +8,27 @@ Upcoming version (not yet released)
 Added
 ^^^^^
 
+- Added a broken-bridge terrain with repeated 10-35 cm gaps and a 1 m drop,
+  plus a four-column Black SRMAV curriculum containing ascending stairs,
+  descending stairs, fixed rough terrain, and the bridge. Bridge environments
+  spawn facing the gap and receive forward-only velocity plus heading-keeping
+  commands. Environments terminate when their robot leaves the assigned
+  sub-terrain patch and treat that boundary exit as a truncation rather than a
+  failure, preventing cross-terrain command mismatches without teaching the
+  policy to stop inside the patch.
+
+- Added a per-foot bridge crossing reward. Each foot receives a one-time
+  0.25 reward per gap after making loaded contact beyond the far edge, for a
+  total of 1 per gap and no whole-bridge completion bonus.
+
+- Added ``--terrain-type`` to play so a generated curriculum task can spawn
+  every play environment on a selected named sub-terrain.
+
+- Added a debug RGB-D camera to the Black SRMAV environment. It is mounted on
+  the robot's D435 link, renders the terrain and robot view, and is exposed
+  through Viser's camera feed and frustum overlays without entering the policy
+  observations.
+
 - Added the ``Mjlab-SRMA-Student-Rough-Unitree-Go1`` task, which distills the
   privileged SRMA teacher into a deployable stateful GRU student. The student
   estimates body velocity and the 16-D external latent from the 45-D actor
@@ -121,6 +142,13 @@ Added
 
 Changed
 ^^^^^^^
+
+- SRMAV's privileged teacher now reuses the 187-point central velocity
+  terrain scan with support-height normalization. Height and friction/push
+  factors are encoded separately into 16-D and 6-D latents, while ground-truth
+  linear velocity remains a direct actor input. The teacher exposes
+  ``none``/``height``/``priv``/``full`` ablations and reports metrics for both
+  latent branches.
 
 - Black's calf now uses the Go1-compatible 1.5:1 extra reduction instead of the
   physical 2.5:1 belt reduction, reducing its reflected inertia, stiffness,

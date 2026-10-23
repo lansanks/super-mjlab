@@ -109,6 +109,8 @@ def test_play_training_observation_structure_match(all_task_ids: list[str]) -> N
   teacher_dependent_student_tasks = {
     "Mjlab-SRMA-Student-Rough-Black",
     "Mjlab-SRMA-Student-Rough-Unitree-Go1",
+    "Mjlab-SRMAV-Student-Rough-Black",
+    "Mjlab-SRMAV-Student-Rough-Unitree-Go1",
   }
   for task_id in all_task_ids:
     if task_id in teacher_dependent_student_tasks:

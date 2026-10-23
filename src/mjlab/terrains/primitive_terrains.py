@@ -52,6 +52,150 @@ class BoxFlatTerrainCfg(SubTerrainCfg):
 
 
 @dataclass(kw_only=True)
+class BoxBrokenBridgeTerrainCfg(SubTerrainCfg):
+  """Narrow bridge with repeated transverse gaps and a deep floor."""
+
+  gap_width_range: tuple[float, float] = (0.10, 0.35)
+  """Minimum and maximum gap width, interpolated by difficulty."""
+  num_gaps: int = 4
+  """Number of transverse gaps along the bridge."""
+  bridge_width: float | None = None
+  """Width of the walkable bridge deck. None spans the full terrain column."""
+  deck_between_gaps: float = 1.2
+  """Flat deck length between adjacent gaps, in meters."""
+  end_platform_width: float = 1.0
+  """Flat deck length before the first gap and after the last gap, in meters."""
+  pit_depth: float = 1.0
+  """Vertical distance from the bridge surface to the pit floor, in meters."""
+  deck_thickness: float = 0.1
+  """Bridge deck slab thickness, in meters."""
+
+  def _deck_intervals(
+    self,
+    gap_width: float,
+    patch_length: float | None = None,
+  ) -> list[tuple[float, float]]:
+    terrain_length = self.size[0] if patch_length is None else patch_length
+    fixed_length = (
+      self.num_gaps * gap_width + max(self.num_gaps - 1, 0) * self.deck_between_gaps
+    )
+    end_platform_length = 0.5 * (terrain_length - fixed_length)
+    if end_platform_length < self.end_platform_width - 1e-9:
+      raise ValueError(
+        "Broken bridge does not leave the requested end platform length: "
+        f"{end_platform_length:.3f} m < {self.end_platform_width:.3f} m."
+      )
+
+    cursor = 0.0
+    intervals = [(cursor, cursor + end_platform_length)]
+    cursor += end_platform_length
+    for gap_index in range(self.num_gaps):
+      cursor += gap_width
+      interval_length = (
+        end_platform_length
+        if gap_index == self.num_gaps - 1
+        else self.deck_between_gaps
+      )
+      intervals.append((cursor, cursor + interval_length))
+      cursor += interval_length
+    if abs(cursor - terrain_length) > 1e-9:
+      raise ValueError(
+        "Broken bridge layout does not span the terrain column: "
+        f"{cursor:.3f} m != {terrain_length:.3f} m."
+      )
+    return intervals
+
+  def gap_width(self, difficulty: float) -> float:
+    """Return the gap width generated at a curriculum difficulty."""
+    return self.gap_width_range[0] + difficulty * (
+      self.gap_width_range[1] - self.gap_width_range[0]
+    )
+
+  def gap_intervals(
+    self,
+    difficulty: float,
+    patch_length: float | None = None,
+  ) -> list[tuple[float, float]]:
+    """Return local start/end x coordinates for every gap."""
+    decks = self._deck_intervals(self.gap_width(difficulty), patch_length)
+    return [(decks[index][1], decks[index + 1][0]) for index in range(len(decks) - 1)]
+
+  def function(
+    self, difficulty: float, spec: mujoco.MjSpec, rng: np.random.Generator
+  ) -> TerrainOutput:
+    del rng
+    if self.num_gaps < 1:
+      raise ValueError("Broken bridge requires at least one gap.")
+    bridge_width = self.size[1] if self.bridge_width is None else self.bridge_width
+    if bridge_width <= 0.0 or bridge_width > self.size[1]:
+      raise ValueError("bridge_width must be positive and fit within terrain.")
+    if self.deck_thickness <= 0.0 or self.pit_depth <= 0.0:
+      raise ValueError("deck_thickness and pit_depth must be positive.")
+
+    body = spec.body("terrain")
+    gap_width = self.gap_width(difficulty)
+    deck_intervals = self._deck_intervals(gap_width)
+    center_y = self.size[1] / 2.0
+
+    geometries: list[TerrainGeometry] = []
+    pit_rgba = (0.08, 0.08, 0.10, 1.0)
+    bridge_rgba = brand_ramp(_MUJOCO_BLUE, 0.55)
+    border_rgba = darken_rgba(bridge_rgba, 0.75)
+
+    floor_height = 0.1
+    floor = body.add_geom(
+      type=mujoco.mjtGeom.mjGEOM_BOX,
+      size=(self.size[0] / 2.0, self.size[1] / 2.0, floor_height / 2.0),
+      pos=(self.size[0] / 2.0, center_y, -self.pit_depth - floor_height / 2.0),
+    )
+    geometries.append(TerrainGeometry(geom=floor, color=pit_rgba))
+
+    border_thickness = 0.1
+    border_boxes = make_border(
+      body,
+      self.size,
+      (
+        self.size[0] - 2.0 * border_thickness,
+        self.size[1] - 2.0 * border_thickness,
+      ),
+      height=self.pit_depth,
+      position=(self.size[0] / 2.0, center_y, -self.pit_depth / 2.0),
+    )
+    geometries.extend(
+      TerrainGeometry(geom=box, color=border_rgba) for box in border_boxes
+    )
+
+    for start_x, end_x in deck_intervals:
+      length = end_x - start_x
+      if length <= 0.0:
+        raise ValueError("Broken bridge generated a non-positive deck segment.")
+      deck = body.add_geom(
+        type=mujoco.mjtGeom.mjGEOM_BOX,
+        size=(
+          length / 2.0,
+          bridge_width / 2.0,
+          self.deck_thickness / 2.0,
+        ),
+        pos=(
+          (start_x + end_x) / 2.0,
+          center_y,
+          -self.deck_thickness / 2.0,
+        ),
+      )
+      geometries.append(TerrainGeometry(geom=deck, color=bridge_rgba))
+
+    first_start, first_end = deck_intervals[0]
+    origin = np.array(
+      [
+        0.5 * (first_start + first_end),
+        center_y,
+        0.0,
+      ]
+    )
+    return TerrainOutput(origin=origin, geometries=geometries)
+
+
+@dataclass(kw_only=True)
 class BoxPyramidStairsTerrainCfg(SubTerrainCfg):
   """Configuration for a pyramid stairs terrain."""
 

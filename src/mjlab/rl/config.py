@@ -63,6 +63,14 @@ class RslRlModelCfg:
   encoder hidden dimensions.
   """
 
+  srmaV_cfg: dict[str, Any] | None = None
+  """SRMAV teacher overrides passed to ``SRMAVTeacherActorModel`` (actor only).
+
+  Keys: ``height_group``, ``friction_group``, ``push_group``,
+  ``velocity_group``, ``height_shape``, ``height_latent_dim``,
+  ``privilege_latent_dim``, ``external_mode`` and encoder hidden dimensions.
+  """
+
   student_cfg: dict[str, Any] | None = None
   """SRMA student overrides passed to ``SRMAStudentActorModel``.
 
