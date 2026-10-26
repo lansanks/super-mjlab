@@ -21,6 +21,7 @@ from mjlab.sensor import (
   RingPatternCfg,
   TerrainHeightSensorCfg,
 )
+from mjlab.sensor.camera_sensor import CameraDataType
 from mjlab.tasks.srmaV import mdp
 from mjlab.tasks.srmaV.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.srmaV.srmaV_env_cfg import (
@@ -48,7 +49,10 @@ BLACK_DEPTH_CAMERA_QUAT = (
 )
 
 
-def _black_depth_camera_cfg() -> CameraSensorCfg:
+def black_depth_camera_cfg(
+  data_types: tuple[CameraDataType, ...] = ("rgb", "depth"),
+) -> CameraSensorCfg:
+  """Create the camera mounted in Black's D435 housing."""
   return CameraSensorCfg(
     name="black_depth_camera",
     parent_body="robot/d435_link",
@@ -57,7 +61,7 @@ def _black_depth_camera_cfg() -> CameraSensorCfg:
     fovy=58.0,
     width=160,
     height=90,
-    data_types=("rgb", "depth"),
+    data_types=data_types,
     enabled_geom_groups=(0, 1, 2),
     use_textures=True,
     use_shadows=False,
@@ -330,7 +334,7 @@ def black_srmaV_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.sim.nconmax = None
 
     # 当前只用于 Viser 调试，避免训练时渲染未接入策略的画面。
-    cfg.scene.sensors = (cfg.scene.sensors or ()) + (_black_depth_camera_cfg(),)
+    cfg.scene.sensors = (cfg.scene.sensors or ()) + (black_depth_camera_cfg(),)
 
     # The teacher and critic both use the central terrain scan.
     for sensor in cfg.scene.sensors or ():

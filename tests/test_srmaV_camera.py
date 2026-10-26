@@ -7,6 +7,9 @@ import mjlab.tasks.srmaV.config.black  # noqa: F401
 from mjlab.envs import ManagerBasedRlEnv
 from mjlab.sensor import CameraSensorCfg
 from mjlab.tasks.srmaV.config.black.env_cfg import black_srmaV_env_cfg
+from mjlab.tasks.srmaV.config.black.student_env_cfg import (
+  black_srmaV_student_env_cfg,
+)
 
 
 def test_black_srmaV_play_has_depth_camera() -> None:
@@ -45,5 +48,32 @@ def test_black_srmaV_depth_camera_renders() -> None:
     assert data.depth.shape == (1, 90, 160, 1)
     assert bool(data.depth.isfinite().all())
     assert float(data.depth.median()) > 0.1
+  finally:
+    env.close()
+
+
+def test_black_srmaV_student_uses_depth_only_at_25_fps() -> None:
+  cfg = black_srmaV_student_env_cfg()
+  sensors = {sensor.name: sensor for sensor in (cfg.scene.sensors or ())}
+  camera = sensors["black_depth_camera"]
+
+  assert isinstance(camera, CameraSensorCfg)
+  assert camera.data_types == ("depth",)
+  assert (camera.width, camera.height) == (160, 90)
+  assert cfg.camera_update_period == 2
+  assert "student_depth" in cfg.observations
+
+
+def test_black_srmaV_student_depth_observation_renders() -> None:
+  cfg = black_srmaV_student_env_cfg()
+  cfg.scene.num_envs = 1
+  env = ManagerBasedRlEnv(cfg=cfg, device=get_test_device())
+  try:
+    observations, _ = env.reset()
+    depth = observations["student_depth"]
+    assert isinstance(depth, torch.Tensor)
+    assert depth.shape == (1, 90, 160, 2)
+    assert bool(depth[..., 1].any())
+    assert bool(depth[..., 0].isfinite().all())
   finally:
     env.close()

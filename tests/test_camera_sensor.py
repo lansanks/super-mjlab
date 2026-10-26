@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import mujoco
+import mujoco_warp as mjwarp
 import pytest
 import torch
 from conftest import get_test_device
@@ -119,6 +120,35 @@ def test_camera_rgb_and_depth(device):
   assert data.depth is not None
   assert data.rgb.shape == (2, 24, 32, 3)
   assert data.depth.shape == (2, 24, 32, 1)
+
+
+def test_sense_can_hold_camera_frames(monkeypatch):
+  cam_cfg = CameraSensorCfg(
+    name="test_cam",
+    camera_name="world/overhead_cam",
+    width=32,
+    height=24,
+    data_types=("depth",),
+  )
+  scene, sim = _make_scene_and_sim("cpu", sensors=(cam_cfg,))
+  render_calls = 0
+  original_render = mjwarp.render
+
+  def counted_render(*args, **kwargs):
+    nonlocal render_calls
+    render_calls += 1
+    return original_render(*args, **kwargs)
+
+  monkeypatch.setattr(mjwarp, "render", counted_render)
+  sim.forward()
+  sim.sense(render_cameras=True)
+  assert render_calls == 1
+
+  sim.sense(render_cameras=False)
+  assert render_calls == 1
+  data = scene["test_cam"].data
+  assert data.depth is not None
+  assert bool(data.depth.isfinite().all())
 
 
 def test_camera_create_new(device):

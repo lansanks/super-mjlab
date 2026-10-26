@@ -1,4 +1,4 @@
-"""Runner for SRMAV student DAgger training and deployment export."""
+"""Runner for the vision-conditioned SRMAV student."""
 
 from __future__ import annotations
 
@@ -8,27 +8,26 @@ from rsl_rl.models import MLPModel
 from rsl_rl.utils import WandbLogWriter
 
 from mjlab.rl import RslRlVecEnvWrapper
-from mjlab.rl.exporter_utils import (
-  attach_metadata_to_onnx,
-  get_base_metadata,
-)
+from mjlab.rl.exporter_utils import attach_metadata_to_onnx, get_base_metadata
 from mjlab.rl.runner import MjlabOnPolicyRunner
-from mjlab.tasks.srmaV.rl.network.student_actor import SRMAVStudentActorModel
+from mjlab.tasks.srmaV.rl.network.visual_student_actor import (
+  SRMAVVisualStudentActorModel,
+)
 
 
-class SRMAVStudentRunner(MjlabOnPolicyRunner):
-  """Persist DAgger stage state and export the deployable student policy."""
+class SRMAVVisualStudentRunner(MjlabOnPolicyRunner):
+  """Persist visual DAgger state and bind play-time debug estimates."""
 
   env: RslRlVecEnvWrapper
 
   def get_inference_policy(self, device: str | None = None) -> MLPModel:
     policy = super().get_inference_policy(device)
-    if isinstance(policy, SRMAVStudentActorModel):
+    if isinstance(policy, SRMAVVisualStudentActorModel):
       policy.bind_debug_env(self.env.unwrapped)
     return policy
 
   def save(self, path: str, infos=None) -> None:
-    """Save the algorithm stage state without dropping its ``srmaV`` metadata."""
+    """Save DAgger state without dropping its ``srmaV`` metadata."""
     saved_dict = self.alg.save()
     saved_infos = dict(saved_dict.get("infos") or {})
     saved_infos.update(infos or {})
@@ -46,7 +45,11 @@ class SRMAVStudentRunner(MjlabOnPolicyRunner):
       self.export_policy_to_onnx(str(policy_dir), filename)
       is_wandb = isinstance(self.logger.writer, WandbLogWriter)
       run_name: str = (wandb.run.name if is_wandb and wandb.run else "local") or "local"
-      metadata = get_base_metadata(self.env.unwrapped, run_name, obs_group="actor")
+      metadata = get_base_metadata(
+        self.env.unwrapped,
+        run_name,
+        obs_group="actor",
+      )
       attach_metadata_to_onnx(str(onnx_path), metadata)
       if is_wandb and self.cfg["upload_model"]:
         wandb.save(str(onnx_path), base_path=str(policy_dir))

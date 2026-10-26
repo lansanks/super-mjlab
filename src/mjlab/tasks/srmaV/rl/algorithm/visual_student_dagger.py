@@ -1,4 +1,4 @@
-"""Frozen-teacher DAgger training for the deployable SRMAV student."""
+"""Frozen-teacher DAgger for the depth-conditioned SRMAV student."""
 
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ from rsl_rl.modules import EmpiricalNormalization
 from rsl_rl.utils import resolve_class, resolve_obs_groups
 from tensordict import TensorDict
 
-from mjlab.tasks.srmaV.rl.network.student_actor import (
-  SRMAVStudentActorModel,
-  SRMAVStudentSequenceOutput,
-)
 from mjlab.tasks.srmaV.rl.network.teacher_actor import SRMAVTeacherActorModel
-from mjlab.tasks.srmaV.rl.storage import (
-  SRMAVStudentRolloutStorage,
-  SRMAVStudentTransition,
+from mjlab.tasks.srmaV.rl.network.visual_student_actor import (
+  SRMAVVisualStudentActorModel,
+  SRMAVVisualStudentSequenceOutput,
+)
+from mjlab.tasks.srmaV.rl.visual_student_storage import (
+  SRMAVVisualStudentRolloutStorage,
+  SRMAVVisualStudentTransition,
 )
 
 TEACHER_OBS_GROUPS = (
@@ -39,14 +39,14 @@ def _tensor(obs: TensorDict, key: str) -> torch.Tensor:
   return value
 
 
-class SRMAVStudentDagger:
-  """Train the student estimator and deterministic actor from a frozen teacher."""
+class SRMAVVisualStudentDagger:
+  """Train visual and proprioceptive beliefs from a frozen teacher."""
 
   def __init__(
     self,
-    student: SRMAVStudentActorModel,
+    student: SRMAVVisualStudentActorModel,
     teacher: SRMAVTeacherActorModel | None,
-    storage: SRMAVStudentRolloutStorage,
+    storage: SRMAVVisualStudentRolloutStorage,
     pretrain_iterations: int = 20,
     num_learning_epochs: int = 4,
     num_mini_batches: int = 4,
@@ -64,21 +64,21 @@ class SRMAVStudentDagger:
   ) -> None:
     self.student = student.to(device)
     self.teacher = teacher.to(device) if teacher is not None else None
-    if not isinstance(self.student, SRMAVStudentActorModel):
+    if not isinstance(self.student, SRMAVVisualStudentActorModel):
       raise TypeError(
-        "SRMAVStudentDagger requires SRMAVStudentActorModel, got "
+        "SRMAVVisualStudentDagger requires SRMAVVisualStudentActorModel, got "
         f"{type(self.student).__name__}."
       )
     if self.teacher is not None and not isinstance(
       self.teacher, SRMAVTeacherActorModel
     ):
       raise TypeError(
-        "SRMAVStudentDagger requires SRMAVTeacherActorModel, got "
+        "SRMAVVisualStudentDagger requires SRMAVTeacherActorModel, got "
         f"{type(self.teacher).__name__}."
       )
     if multi_gpu_cfg is not None:
       raise NotImplementedError(
-        "SRMAV student DAgger currently supports single-GPU training only."
+        "SRMAV visual student DAgger supports single-GPU training only."
       )
     if pretrain_iterations < 0:
       raise ValueError("pretrain_iterations must be non-negative.")
@@ -115,7 +115,7 @@ class SRMAVStudentDagger:
     self.behavior_is_teacher = torch.ones(
       self.storage.num_envs, 1, dtype=torch.bool, device=device
     )
-    self.transition: SRMAVStudentTransition | None = None
+    self.transition: SRMAVVisualStudentTransition | None = None
     self._velocity_scale = torch.ones(self.student.velocity_dim, device=device)
     self._action_scale = torch.ones(self.storage.action_dim, device=device)
     self._latest_metrics: dict[str, torch.Tensor] = {}
@@ -129,7 +129,7 @@ class SRMAVStudentDagger:
     return self._teacher_fraction
 
   def teacher_fraction_for_iteration(self, iteration: int) -> float:
-    """Return the configured stepwise teacher ratio for an absolute iteration."""
+    """Return the ten-decile teacher schedule for an absolute iteration."""
     if iteration < 0:
       raise ValueError("iteration must be non-negative.")
     decile = math.floor(10.0 * iteration / self.max_iterations)
@@ -167,8 +167,10 @@ class SRMAVStudentDagger:
     with torch.no_grad():
       self.teacher.get_latent(obs)
       teacher_output = self.teacher.last_external_output
-      teacher_action_mean = self.teacher.action_mean_with_latent(
-        obs, teacher_output.latent
+      teacher_action_mean = self.teacher.action_mean_with_latents(
+        obs,
+        teacher_output.height_latent,
+        teacher_output.privilege_latent,
       )
       student_output = self.student.forward_deterministic(obs)
       action = torch.where(
@@ -183,6 +185,18 @@ class SRMAVStudentDagger:
           .mean()
           .detach()
         ),
+        "Metrics/student_height_latent_mse": (
+          (student_output.height_latent - teacher_output.height_latent)
+          .square()
+          .mean()
+          .detach()
+        ),
+        "Metrics/student_privilege_latent_mse": (
+          (student_output.privilege_latent - teacher_output.privilege_latent)
+          .square()
+          .mean()
+          .detach()
+        ),
         "Metrics/student_latent_mse": (
           (student_output.latent - teacher_output.latent).square().mean().detach()
         ),
@@ -190,11 +204,13 @@ class SRMAVStudentDagger:
           (student_output.actor_mean - teacher_action_mean).square().mean().detach()
         ),
       }
-      self.transition = SRMAVStudentTransition(
+      self.transition = SRMAVVisualStudentTransition(
         obs_actor=_tensor(obs, self.student.obs_group).detach(),
+        obs_depth=_tensor(obs, self.student.depth_group).detach(),
         teacher_action=teacher_action_mean.detach(),
         teacher_velocity=teacher_output.velocity.detach(),
-        teacher_latent=teacher_output.latent.detach(),
+        teacher_height_latent=teacher_output.height_latent.detach(),
+        teacher_privilege_latent=teacher_output.privilege_latent.detach(),
         behavior_action=action.detach(),
         is_teacher=self.behavior_is_teacher.clone(),
       )
@@ -245,29 +261,31 @@ class SRMAVStudentDagger:
 
   def _sequence_losses(
     self,
-    output: SRMAVStudentSequenceOutput,
+    output: SRMAVVisualStudentSequenceOutput,
     indices: torch.Tensor,
     estimator_only: bool,
-  ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+  ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     velocity_target = self.storage.teacher_velocity[:, indices]
-    latent_target = self.storage.teacher_latent[:, indices]
+    height_target = self.storage.teacher_height_latent[:, indices]
+    privilege_target = self.storage.teacher_privilege_latent[:, indices]
     velocity_loss = (
       ((output.velocity - velocity_target) / self._velocity_scale).square().mean()
     )
-    latent_loss = (output.latent - latent_target).square().mean()
+    height_loss = (output.height_latent - height_target).square().mean()
+    privilege_loss = (output.privilege_latent - privilege_target).square().mean()
     if estimator_only:
-      action_loss = latent_loss.new_zeros(())
+      action_loss = velocity_loss.new_zeros(())
     else:
       action_target = self.storage.teacher_action[:, indices]
       action_loss = (
         ((output.actor_mean - action_target) / self._action_scale).square().mean()
       )
-    return velocity_loss, latent_loss, action_loss
+    return velocity_loss, height_loss, privilege_loss, action_loss
 
   def update(self) -> dict[str, float]:
     if self.storage.step != self.storage.num_transitions_per_env:
       raise RuntimeError(
-        "SRMAV student update requires a full rollout buffer, got "
+        "SRMAV visual student update requires a full rollout buffer, got "
         f"{self.storage.step} steps."
       )
     self._update_loss_scales()
@@ -277,18 +295,25 @@ class SRMAVStudentDagger:
     if self.teacher is not None:
       self.teacher.eval()
 
-    totals = {"velocity": 0.0, "latent": 0.0, "action": 0.0}
+    totals = {
+      "velocity": 0.0,
+      "height": 0.0,
+      "privilege": 0.0,
+      "action": 0.0,
+    }
     updates = 0
     for _ in range(self.num_learning_epochs):
       for indices in self.storage.env_mini_batches(self.num_mini_batches):
         output = self.student.forward_sequence(
           self.storage.obs_actor[:, indices],
-          self.storage.initial_hidden[:, indices],
+          self.storage.obs_depth[:, indices],
+          self.storage.initial_hidden[:, :, indices],
           self.storage.dones[:, indices],
         )
-        velocity_loss, latent_loss, action_loss = self._sequence_losses(
+        velocity_loss, height_loss, privilege_loss, action_loss = self._sequence_losses(
           output, indices, estimator_only
         )
+        latent_loss = 0.5 * (height_loss + privilege_loss)
         loss = (
           self.velocity_loss_coef * velocity_loss + self.latent_loss_coef * latent_loss
         )
@@ -300,7 +325,8 @@ class SRMAVStudentDagger:
         nn.utils.clip_grad_norm_(list(self._student_parameters()), self.max_grad_norm)
         self.optimizer.step()
         totals["velocity"] += float(velocity_loss.detach())
-        totals["latent"] += float(latent_loss.detach())
+        totals["height"] += float(height_loss.detach())
+        totals["privilege"] += float(privilege_loss.detach())
         totals["action"] += float(action_loss.detach())
         updates += 1
 
@@ -316,7 +342,8 @@ class SRMAVStudentDagger:
     scale = max(updates, 1)
     return {
       "student_velocity": totals["velocity"] / scale,
-      "student_latent": totals["latent"] / scale,
+      "student_height_latent": totals["height"] / scale,
+      "student_privilege_latent": totals["privilege"] / scale,
       "student_action": totals["action"] / scale,
     }
 
@@ -330,11 +357,11 @@ class SRMAVStudentDagger:
     if self.teacher is not None:
       self.teacher.eval()
 
-  def get_policy(self) -> SRMAVStudentActorModel:
+  def get_policy(self) -> SRMAVVisualStudentActorModel:
     return self.student
 
   def save(self) -> dict[str, Any]:
-    saved: dict[str, Any] = {
+    return {
       "student_state_dict": self.student.state_dict(),
       "teacher_state_dict": (
         self.teacher.state_dict() if self.teacher is not None else None
@@ -353,7 +380,6 @@ class SRMAVStudentDagger:
         }
       },
     }
-    return saved
 
   def load(
     self,
@@ -423,15 +449,15 @@ class SRMAVStudentDagger:
     env: VecEnv,
     cfg: dict,
     device: str,
-  ) -> "SRMAVStudentDagger":
+  ) -> "SRMAVVisualStudentDagger":
     if cfg.get("multi_gpu") is not None:
       raise NotImplementedError(
-        "SRMAV student DAgger currently supports single-GPU training only."
+        "SRMAV visual student DAgger supports single-GPU training only."
       )
     obs_groups = resolve_obs_groups(obs, cfg["obs_groups"], ["actor"])
     student_class, student_kwargs = resolve_class(cfg["student"])
     student = cast(
-      SRMAVStudentActorModel,
+      SRMAVVisualStudentActorModel,
       student_class(
         obs,
         obs_groups,
@@ -459,7 +485,11 @@ class SRMAVStudentDagger:
       checkpoint_path = str(cfg["teacher_checkpoint"])
       if not os.path.isfile(checkpoint_path):
         raise FileNotFoundError(f"Teacher checkpoint not found: {checkpoint_path}")
-      checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+      checkpoint = torch.load(
+        checkpoint_path,
+        map_location=device,
+        weights_only=False,
+      )
       teacher_state = checkpoint.get("actor_state_dict")
       if teacher_state is None:
         raise KeyError(f"Teacher checkpoint has no actor_state_dict: {checkpoint_path}")
@@ -474,19 +504,17 @@ class SRMAVStudentDagger:
       )
 
     hidden = student.get_hidden_state()
-    storage = SRMAVStudentRolloutStorage(
+    storage = SRMAVVisualStudentRolloutStorage(
       obs=obs,
       num_envs=env.num_envs,
       num_transitions_per_env=int(cfg["num_steps_per_env"]),
       action_dim=env.num_actions,
       velocity_dim=student.velocity_dim,
-      latent_dim=student.latent_dim,
-      hidden_shape=(
-        int(hidden.shape[0]),
-        int(hidden.shape[1]),
-        int(hidden.shape[2]),
-      ),
+      height_latent_dim=student.height_latent_dim,
+      privilege_latent_dim=student.privilege_latent_dim,
+      hidden_shape=tuple(hidden.shape),
       obs_group=student.obs_group,
+      depth_group=student.depth_group,
       device=device,
     )
     algorithm_cfg = dict(cfg["algorithm"])

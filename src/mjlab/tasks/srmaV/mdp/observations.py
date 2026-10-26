@@ -8,7 +8,7 @@ import torch
 
 from mjlab.entity import Entity
 from mjlab.managers.manager_base import ManagerTermBase
-from mjlab.sensor import ContactSensor, RayCastSensor
+from mjlab.sensor import CameraSensor, ContactSensor, RayCastSensor
 from mjlab.sensor.terrain_height_sensor import TerrainHeightSensor
 
 from .events import push_by_setting_velocity_with_record
@@ -209,3 +209,54 @@ class foot_friction(ManagerTermBase):
       2.0 * (log_friction - self._log_min) / (self._log_max - self._log_min) - 1.0
     )
     return normalized.clamp(-1.0, 1.0)
+
+
+class student_depth_image(ManagerTermBase):
+  """Normalized D435-style depth with an invalid-pixel mask.
+
+  The output has two channels: normalized camera-plane depth and validity.
+  Invalid and out-of-range pixels have zero depth and zero validity. When a
+  camera is configured to update periodically, reset environments are masked
+  until the next rendered frame so they cannot reuse a pre-reset observation.
+  """
+
+  def __init__(self, cfg: ObservationTermCfg, env: ManagerBasedRlEnv) -> None:
+    super().__init__(env)
+    params = cfg.params
+    self._sensor: CameraSensor = env.scene[params["sensor_name"]]
+    self._min_depth = float(params["min_depth"])
+    self._max_depth = float(params["max_depth"])
+    self._pending_reset = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    if self._min_depth <= 0.0 or self._max_depth <= self._min_depth:
+      raise ValueError("Expected 0 < min_depth < max_depth.")
+
+  def reset(
+    self,
+    env_ids: Sequence[int] | torch.Tensor | slice | None = None,
+  ) -> None:
+    ids: Sequence[int] | torch.Tensor | slice = (
+      slice(None) if env_ids is None else env_ids
+    )
+    self._pending_reset[ids] = True
+
+  def __call__(self, env: ManagerBasedRlEnv, **kwargs) -> torch.Tensor:
+    del kwargs
+    depth = self._sensor.data.depth
+    if depth is None:
+      raise RuntimeError("student_depth_image requires camera depth output.")
+
+    rendered = env.common_step_counter % env.cfg.camera_update_period == 0
+    if not rendered and self._pending_reset.any():
+      depth = torch.where(
+        self._pending_reset.view(-1, 1, 1, 1),
+        torch.zeros_like(depth),
+        depth,
+      )
+    self._pending_reset[:] = False
+
+    valid = torch.isfinite(depth) & (depth >= self._min_depth)
+    valid &= depth <= self._max_depth
+    normalized = depth.clamp(self._min_depth, self._max_depth) - self._min_depth
+    normalized = normalized / (self._max_depth - self._min_depth)
+    normalized = torch.where(valid, normalized, 0.0)
+    return torch.cat((normalized, valid.to(depth.dtype)), dim=-1)

@@ -4,7 +4,7 @@ from mjlab.tasks.registry import register_mjlab_task
 from mjlab.tasks.srmaV.rl.config import (
   black_srmaV_student_dagger_runner_cfg,
 )
-from mjlab.tasks.srmaV.rl.runner import SRMAVStudentRunner
+from mjlab.tasks.srmaV.rl.visual_student_runner import SRMAVVisualStudentRunner
 
 from .env_cfg import BLACK_TEACHER_HEIGHT_SHAPE, black_srmaV_env_cfg
 from .rl_cfg import black_srmaV_teacher_ppo_runner_cfg
@@ -22,5 +22,5 @@ register_mjlab_task(
   env_cfg=black_srmaV_student_env_cfg(),
   play_env_cfg=black_srmaV_student_env_cfg(play=True),
   rl_cfg=black_srmaV_student_dagger_runner_cfg(height_shape=BLACK_TEACHER_HEIGHT_SHAPE),
-  runner_cls=SRMAVStudentRunner,
+  runner_cls=SRMAVVisualStudentRunner,
 )

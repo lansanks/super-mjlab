@@ -162,6 +162,13 @@ class ManagerBasedRlEnvCfg:
   algorithms that expect unscaled reward signals (e.g., HER, static reward scaling).
   """
 
+  camera_update_period: int = 1
+  """Update camera sensors every N environment steps.
+
+  Raycast and other sensors still update every environment step. For example,
+  ``2`` gives 25 FPS cameras on a 50 Hz environment.
+  """
+
 
 class ManagerBasedRlEnv:
   """Manager-based RL environment."""
@@ -183,6 +190,8 @@ class ManagerBasedRlEnv:
   ) -> None:
     # Initialize base environment state.
     self.cfg = cfg
+    if self.cfg.camera_update_period < 1:
+      raise ValueError("camera_update_period must be at least 1.")
     if self.cfg.seed is not None:
       self.cfg.seed = self.seed(self.cfg.seed)
     self._sim_step_counter = 0
@@ -374,7 +383,7 @@ class ManagerBasedRlEnv:
     # Scoped to env_ids so a partial reset does not advance stateful commands in the
     # other envs.
     self.command_manager.compute(dt=0.0, env_ids=env_ids)
-    self.sim.sense()
+    self.sim.sense(render_cameras=True)
     # Scoped to env_ids: only the reset envs' history/delay buffers receive
     # the post-reset frame; other envs' observation timelines are untouched.
     self.obs_buf = self.observation_manager.compute(
@@ -487,7 +496,8 @@ class ManagerBasedRlEnv:
     else:
       self.command_manager.compute(dt=self.step_dt)
 
-    self.sim.sense()
+    render_cameras = self.common_step_counter % self.cfg.camera_update_period == 0
+    self.sim.sense(render_cameras=render_cameras)
     self.obs_buf = self.observation_manager.compute(update_history=True)
 
     if self.cfg.auto_reset and len(reset_env_ids) > 0:

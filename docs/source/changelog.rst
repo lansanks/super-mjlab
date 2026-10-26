@@ -8,6 +8,13 @@ Upcoming version (not yet released)
 Added
 ^^^^^
 
+- Added a depth-conditioned Black SRMAV student. The student uses separate GRUs
+  for a 16-D depth belief and a 6-D privilege/3-D velocity belief, distills the
+  frozen Black teacher with SRMA's decile DAgger schedule, and consumes
+  160x90 depth at a fixed 25 FPS. Camera rendering can now be decoupled from the
+  50 Hz environment rate, and camera update periods are independently
+  configurable.
+
 - Added a broken-bridge terrain with repeated 10-35 cm gaps and a 1 m drop,
   plus a four-column Black SRMAV curriculum containing ascending stairs,
   descending stairs, fixed rough terrain, and the bridge. Bridge environments
@@ -142,6 +149,10 @@ Added
 
 Changed
 ^^^^^^^
+
+- Removed SRMAV's reference-only blind student implementation, its copied
+  DAgger/storage/runner stack, and the unused Go1 SRMAV reference tasks. The
+  Black depth-conditioned student is now the canonical SRMAV student.
 
 - SRMAV's privileged teacher now reuses the 187-point central velocity
   terrain scan with support-height normalization. Height and friction/push
