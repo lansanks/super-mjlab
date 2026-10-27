@@ -2,6 +2,7 @@ wandb/
 logs/
 onnx/
 videos/
+data/
 __pycache__/
 MUJOCO_LOG.TXT
 debug.py

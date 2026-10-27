@@ -8,6 +8,24 @@ Upcoming version (not yet released)
 Added
 ^^^^^
 
+- Added ``Mjlab-Velocity-SuperMimic-Unitree-Go1`` and its flat variant, which
+  train the stock Go1 velocity task with a SuperMimic model-based loop instead
+  of PPO. The actor observation intentionally drops base linear velocity and the
+  terrain height scan; the critic and a learned differentiable world model keep
+  the privileged state. The world model is fitted on short replay windows and
+  the policy is updated by BPTT through imagined rollouts with a critic
+  bootstrap, following the reference reproduction of the SuperMimic paper.
+
+- Added the ``Mjlab-Velocity-SuperMimic-Unitree-Go1-NoCrouch`` variant. It
+  terminates on low base height and trunk-ground contact, starts with
+  forward-only velocity commands that widen to lateral/yaw commands after 4k
+  and 8k environment steps, and uses a tighter action bound (2.0) with more
+  action noise (0.3) to prevent the crouch-and-yaw local optimum seen with the
+  stock rough reward/termination set.  During imagination the runner also
+  combines the learned termination head with an analytic low-base gate and a
+  10x positive-class BCE weight, because the sparse low-base terminations are
+  otherwise underestimated.
+
 - Added a depth-conditioned Black SRMAV student. The student uses separate GRUs
   for a 16-D depth belief and a 6-D privilege/3-D velocity belief, distills the
   frozen Black teacher with SRMA's decile DAgger schedule, and consumes
