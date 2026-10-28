@@ -32,6 +32,9 @@ def main() -> None:
   motion_cfg.joint_position_range = (0.0, 0.0)
   motion_cfg.sampling_mode = "all"
   cfg.auto_reset = False
+  # Run each clip to its end: the metric divides by the full clip length, so a
+  # 10 s episode cap would stop the numerator at 500 steps and deflate the score.
+  cfg.episode_length_s = int(1e9)
 
   # The command loader needs the number of clips before the environment can
   # assign one clip per environment.
