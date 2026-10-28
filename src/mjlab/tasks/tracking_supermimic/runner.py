@@ -191,6 +191,41 @@ class TrackingSuperMimicRunner:
     self.mdp.obs_noise = self.mdp.obs_noise.to(self.device).float()
     self.mdp.obs_scale = self.mdp.obs_scale.to(self.device).float()
 
+    self.compile_enabled = bool(self.cfg.get("compile", True))
+    if self.compile_enabled and self.device.type == "cuda":
+      self._compile_hot_paths()
+
+  def _compile_hot_paths(self) -> None:
+    """Fuse the per-iteration hot paths with ``torch.compile``.
+
+    Iteration time here is dominated by kernel-launch overhead rather than FLOPs:
+    every world-model update runs an 8-step autoregressive rollout and every
+    policy update a 32-step imagination loop, and each step is a long chain of
+    small elementwise ops (rotation helpers, splits, matmuls). The reference
+    SuperMimic implementation reports 0.66 -> 3.1 it/s from compiling exactly
+    these paths, so mirror that here. Compilation is lazy: the first iteration
+    pays a one-off warmup of a few seconds per path.
+    """
+    mode = str(self.cfg.get("compile_mode", "default"))
+    targets = (
+      (self.world_model, "step"),
+      (self.world_model, "state_error"),
+      (self.policy, "forward"),
+      (self.critic, "forward"),
+      (self.mdp, "obs"),
+      (self.mdp, "add_noise"),
+      (self.mdp, "reward"),
+      (self.mdp, "soft_termination"),
+      (self.mdp, "critic_features"),
+      (self.motion, "goal"),
+    )
+    names = []
+    for owner, attribute in targets:
+      compiled = torch.compile(getattr(owner, attribute), mode=mode)
+      setattr(owner, attribute, compiled)
+      names.append(f"{type(owner).__name__}.{attribute}")
+    print(f"[SuperMimic] torch.compile enabled (mode={mode}): {', '.join(names)}")
+
   def _setup_sim_context(self) -> None:
     geom_ids, _ = self.robot.find_geoms(r"^(left|right)_foot[1-7]_collision$")
     self.foot_geom_ids = self.robot.indexing.geom_ids[

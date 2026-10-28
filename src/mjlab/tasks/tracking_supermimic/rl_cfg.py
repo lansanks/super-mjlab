@@ -44,6 +44,10 @@ class TrackingSuperMimicRunnerCfg(RslRlBaseRunnerCfg):
   ckpt_interval: int = 2000
   amp: str = "bf16"
   no_critic: bool = False
+  compile: bool = True
+  """Fuse the per-iteration hot paths with ``torch.compile`` (see ``runner.py``)."""
+  compile_mode: str = "default"
+  """``torch.compile`` mode: ``default``, ``reduce-overhead`` or ``max-autotune``."""
 
 
 def unitree_g1_tracking_supermimic_runner_cfg() -> TrackingSuperMimicRunnerCfg:
