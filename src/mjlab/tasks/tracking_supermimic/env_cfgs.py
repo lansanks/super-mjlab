@@ -110,7 +110,10 @@ def unitree_g1_tracking_supermimic_env_cfg(
     motion_cfg.pose_range = {}
     motion_cfg.velocity_range = {}
     motion_cfg.joint_position_range = (0.0, 0.0)
-    motion_cfg.sampling_mode = "start"
+    # Give each env its own clip and let it play the clip to its end, so a play run
+    # with num_envs == num_clips shows every motion instead of clip 0 on repeat.
+    motion_cfg.sampling_mode = "all"
+    cfg.episode_length_s = int(1e9)
 
   return cfg
 

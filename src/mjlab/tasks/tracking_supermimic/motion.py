@@ -118,6 +118,11 @@ class LafanMotionLibrary:
   ) -> torch.Tensor:
     return torch.as_tensor(value, dtype=dtype, device=self.device)
 
+  @property
+  def time_step_total(self) -> int:
+    """Total frames across all clips; the viewer scrubber spans this range."""
+    return int(self.q.shape[0])
+
   def clip_for_frame(self, frames: torch.Tensor) -> torch.Tensor:
     return self.frame_clip[frames]
 

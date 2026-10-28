@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Callable
 
 import torch
 
@@ -21,6 +22,9 @@ from .mdp import MAX_STEP_REWARD
 from .motion import LafanMotionLibrary
 from .rotations import mat_to_quat
 
+if TYPE_CHECKING:
+  import viser
+
 
 class LafanMotionCommand(MotionCommand):
   """Tracking command that samples complete clips instead of one continuous file."""
@@ -29,6 +33,11 @@ class LafanMotionCommand(MotionCommand):
 
   def __init__(self, cfg: LafanMotionCommandCfg, env):
     CommandTerm.__init__(self, cfg, env)
+    # MotionCommand.__init__ is intentionally bypassed, so seed the ghost-visualizer
+    # state the viewer duck-types on.
+    self._ghost_model = None
+    self._ghost_color = tuple(float(channel) for channel in cfg.viz.ghost_color)
+    self._forced_clip: int | None = None
     self.robot = env.scene[cfg.entity_name]
     self.robot_anchor_body_index = self.robot.body_names.index(cfg.anchor_body_name)
     self.motion_anchor_body_index = cfg.body_names.index(cfg.anchor_body_name)
@@ -283,18 +292,63 @@ class LafanMotionCommand(MotionCommand):
       self.time_steps.clamp_max_(self.clip_end)
 
   def reset_to_frame(self, env_ids: torch.Tensor, frame: int) -> None:
+    # Index with a per-env tensor rather than the scalar frame so every state
+    # component keeps a leading batch dimension; a scalar index yields (3,) / (4,)
+    # rows that cannot be concatenated with the (n, 3) env-origin offset.
+    frames = torch.full(
+      (len(env_ids),),
+      frame,
+      dtype=torch.long,
+      device=self.device,
+    )
     self.time_steps[env_ids] = frame
     self.clip_ids[env_ids] = self.motion.frame_clip[frame]
-    root_pos = self.motion.root_p[frame] + self._env.scene.env_origins[env_ids]
+    root_pos = self.motion.root_p[frames] + self._env.scene.env_origins[env_ids]
     self._write_reference_state_to_sim(
       env_ids,
       root_pos,
-      mat_to_quat(self.motion.root_R[frame]),
-      self.motion.root_v[frame],
-      self.motion.root_w[frame],
-      self.motion.q[frame],
-      self.motion.qd[frame],
+      mat_to_quat(self.motion.root_R[frames]),
+      self.motion.root_v[frames],
+      self.motion.root_w[frames],
+      self.motion.q[frames],
+      self.motion.qd[frames],
     )
+
+
+  def create_gui(
+    self,
+    name: str,
+    server: viser.ViserServer,
+    get_env_idx: Callable[[], int],
+    on_change: Callable[[], None] | None = None,
+    request_action: Callable[[str, Any], None] | None = None,
+  ) -> None:
+    """Add a clip picker on top of the stock frame scrubber."""
+    super().create_gui(name, server, get_env_idx, on_change, request_action)
+    clip_names = [str(clip) for clip in self.motion.names]
+    with server.gui.add_folder("Clip"):
+      dropdown = server.gui.add_dropdown(
+        "Motion",
+        options=clip_names,
+        initial_value=clip_names[self._forced_clip or 0],
+      )
+
+      @dropdown.on_update
+      def _(_) -> None:
+        self._forced_clip = clip_names.index(dropdown.value)
+        if request_action is not None:
+          request_action("CUSTOM", {"type": "gui_reset", "all_envs": False})
+        if on_change is not None:
+          on_change()
+
+  def apply_gui_reset(self, env_ids: torch.Tensor) -> bool:
+    """Restart the selected env on the clip chosen in the viewer dropdown."""
+    if self._forced_clip is None:
+      return super().apply_gui_reset(env_ids)
+    self.reset_to_frame(env_ids, int(self.motion.clip_start[self._forced_clip]))
+    self._env.sim.forward()
+    self.update_relative_body_poses()
+    return True
 
 
 @dataclass(kw_only=True)
