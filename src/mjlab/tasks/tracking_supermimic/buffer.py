@@ -7,17 +7,27 @@ import torch
 from .constants import NUM_JOINTS, STATE_DIM
 from .mdp import XI_DIM
 
-FIELDS: dict[str, tuple[tuple[int, ...], torch.dtype]] = {
-  "s": ((STATE_DIM,), torch.float32),
-  "s1": ((STATE_DIM,), torch.float32),
-  "a": ((NUM_JOINTS,), torch.float32),
-  "a_prev": ((NUM_JOINTS,), torch.float32),
-  "xi": ((XI_DIM,), torch.float32),
-  "r": ((), torch.float32),
-  "f": ((), torch.long),
-  "ep_step": ((), torch.int32),
-  "done": ((), torch.bool),
-}
+
+def replay_fields(
+  num_joints: int,
+  state_dim: int,
+  sim_context_dim: int,
+) -> dict[str, tuple[tuple[int, ...], torch.dtype]]:
+  return {
+    "s": ((state_dim,), torch.float32),
+    "s1": ((state_dim,), torch.float32),
+    "a": ((num_joints,), torch.float32),
+    "a_prev": ((num_joints,), torch.float32),
+    "xi": ((sim_context_dim,), torch.float32),
+    "r": ((), torch.float32),
+    "f": ((), torch.long),
+    "ep_step": ((), torch.int32),
+    "done": ((), torch.bool),
+  }
+
+
+# G1 defaults are kept as module constants for backward compatibility.
+FIELDS = replay_fields(NUM_JOINTS, STATE_DIM, XI_DIM)
 
 
 class ReplayBuffer:
@@ -26,23 +36,27 @@ class ReplayBuffer:
     steps: int,
     num_envs: int,
     device: str | torch.device,
+    num_joints: int = NUM_JOINTS,
+    state_dim: int = STATE_DIM,
+    sim_context_dim: int = XI_DIM,
   ):
     self.steps = steps
     self.num_envs = num_envs
     self.device = device
+    self.fields = replay_fields(num_joints, state_dim, sim_context_dim)
     self.data = {
       key: torch.zeros(
         (steps, num_envs, *shape),
         dtype=dtype,
         device=device,
       )
-      for key, (shape, dtype) in FIELDS.items()
+      for key, (shape, dtype) in self.fields.items()
     }
     self.ptr = 0
     self.size = 0
 
   def add(self, transition: dict[str, torch.Tensor]) -> None:
-    for key in FIELDS:
+    for key in self.fields:
       value = transition[key]
       if value.requires_grad:
         value = value.detach()

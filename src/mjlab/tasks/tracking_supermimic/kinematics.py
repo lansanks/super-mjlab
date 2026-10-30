@@ -1,6 +1,9 @@
-"""Differentiable G1 forward kinematics built from mjlab's MJCF asset."""
+"""Differentiable forward kinematics built from mjlab MJCF assets."""
 
 from __future__ import annotations
+
+from pathlib import Path
+from typing import Protocol
 
 import mujoco
 import numpy as np
@@ -12,13 +15,19 @@ from .constants import G1_JOINT_NAMES, TRACKED_BODIES
 from .rotations import axis_angle_to_mat, quat_to_mat
 
 
-class G1Kinematics:
-  """Compute tracked G1 link poses and velocities from a floating-base state."""
+class MjcfKinematics:
+  """Compute tracked MJCF body poses and velocities from a floating-base state."""
 
-  def __init__(self, device: str | torch.device):
-    model = mujoco.MjModel.from_xml_path(str(G1_XML))
+  def __init__(
+    self,
+    xml_path: str | Path,
+    joint_names: tuple[str, ...],
+    tracked_bodies: tuple[str, ...],
+    device: str | torch.device,
+  ):
+    model = mujoco.MjModel.from_xml_path(str(xml_path))
     self.device = torch.device(device)
-    joint_to_index = {name: i for i, name in enumerate(G1_JOINT_NAMES)}
+    joint_to_index = {name: i for i, name in enumerate(joint_names)}
 
     bodies: list[str] = []
     parent: list[int] = []
@@ -54,9 +63,9 @@ class G1Kinematics:
       offsets_pos.append(model.body_pos[body_id].copy())
       offsets_quat.append(model.body_quat[body_id].copy())
 
-    missing = [name for name in TRACKED_BODIES if name not in bodies]
+    missing = [name for name in tracked_bodies if name not in bodies]
     if missing:
-      raise RuntimeError(f"Tracked bodies missing from G1 model: {missing}")
+      raise RuntimeError(f"Tracked bodies missing from MJCF model: {missing}")
 
     self.body_names = tuple(bodies)
     self.parent = tuple(parent)
@@ -70,10 +79,10 @@ class G1Kinematics:
     self.offset_rot = quat_to_mat(
       torch.as_tensor(np.asarray(offsets_quat), dtype=torch.float32, device=self.device)
     )
-    self.tracked_indices = tuple(bodies.index(name) for name in TRACKED_BODIES)
+    self.tracked_indices = tuple(bodies.index(name) for name in tracked_bodies)
 
-    q_lo = np.zeros(len(G1_JOINT_NAMES), dtype=np.float32)
-    q_hi = np.zeros(len(G1_JOINT_NAMES), dtype=np.float32)
+    q_lo = np.zeros(len(joint_names), dtype=np.float32)
+    q_hi = np.zeros(len(joint_names), dtype=np.float32)
     for joint_id in range(model.njnt):
       name = model.joint(joint_id).name
       if name in joint_to_index:
@@ -136,9 +145,34 @@ class G1Kinematics:
       angular_velocities[body_index] = body_ang_vel
 
     indices = self.tracked_indices
+
+    def selected(values: list[torch.Tensor | None]) -> list[torch.Tensor]:
+      output: list[torch.Tensor] = []
+      for index in indices:
+        value = values[index]
+        assert value is not None
+        output.append(value)
+      return output
+
     return (
-      torch.stack([positions[i] for i in indices], -2),
-      torch.stack([rotations[i] for i in indices], -3),
-      torch.stack([linear_velocities[i] for i in indices], -2),
-      torch.stack([angular_velocities[i] for i in indices], -2),
+      torch.stack(selected(positions), -2),
+      torch.stack(selected(rotations), -3),
+      torch.stack(selected(linear_velocities), -2),
+      torch.stack(selected(angular_velocities), -2),
+    )
+
+
+class KinematicsFactory(Protocol):
+  def __call__(self, device: str | torch.device) -> MjcfKinematics: ...
+
+
+class G1Kinematics(MjcfKinematics):
+  """Compute tracked G1 link poses and velocities from a floating-base state."""
+
+  def __init__(self, device: str | torch.device):
+    super().__init__(
+      G1_XML,
+      G1_JOINT_NAMES,
+      TRACKED_BODIES,
+      device,
     )

@@ -30,18 +30,18 @@ def _robot_state(env):
   )
 
 
-def bad_anchor_pos(env) -> torch.Tensor:
+def bad_anchor_pos(env, threshold: float = 0.25) -> torch.Tensor:
   command = _command(env)
   reference = command.motion.root_p[_next_reference_frame(env)]
   robot_pos = _robot_state(env)[0]
-  return (reference[:, 2] - robot_pos[:, 2]).abs() > 0.25
+  return (reference[:, 2] - robot_pos[:, 2]).abs() > threshold
 
 
-def bad_anchor_ori(env) -> torch.Tensor:
+def bad_anchor_ori(env, threshold: float = 0.8) -> torch.Tensor:
   command = _command(env)
   reference = command.motion.root_R[_next_reference_frame(env)]
   robot_rot = _robot_state(env)[1]
-  return (reference[:, 2, 2] - robot_rot[:, 2, 2]).abs() > 0.8
+  return (reference[:, 2, 2] - robot_rot[:, 2, 2]).abs() > threshold
 
 
 def motion_clip_end(env) -> torch.Tensor:

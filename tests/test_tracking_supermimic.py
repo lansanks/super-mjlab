@@ -7,15 +7,37 @@ import numpy as np
 import torch
 
 from mjlab.asset_zoo.robots.unitree_g1.g1_constants import G1_XML
+from mjlab.asset_zoo.robots.unitree_go2.go2_constants import GO2_XML
 from mjlab.tasks.tracking_supermimic.constants import (
   G1_JOINT_NAMES,
   TRACKED_BODIES,
 )
 from mjlab.tasks.tracking_supermimic.kinematics import G1Kinematics
+from mjlab.tasks.tracking_supermimic.mdp import (
+  critic_extra_dim,
+  goal_dim_per_frame,
+  invariant_dim,
+  obs_dim,
+  xi_dim,
+)
 from mjlab.tasks.tracking_supermimic.motion import LafanMotionLibrary
+from mjlab.tasks.tracking_supermimic.nets import Policy, WorldModel
 from mjlab.tasks.tracking_supermimic.scripts.convert_lafan1 import (
   _build_model_metadata,
   convert_clip,
+)
+from mjlab.tasks.tracking_supermimic_go2.constants import (
+  GO2_JOINT_NAMES,
+)
+from mjlab.tasks.tracking_supermimic_go2.constants import (
+  TRACKED_BODIES as GO2_TRACKED_BODIES,
+)
+from mjlab.tasks.tracking_supermimic_go2.kinematics import Go2Kinematics
+from mjlab.tasks.tracking_supermimic_go2.scripts.convert_go2_cycles import (
+  _build_model_metadata as _build_go2_model_metadata,
+)
+from mjlab.tasks.tracking_supermimic_go2.scripts.convert_go2_cycles import (
+  convert_clip as convert_go2_clip,
 )
 
 
@@ -120,3 +142,103 @@ def test_lafan_conversion_produces_body_trajectories(tmp_path: Path):
   assert np.allclose(pelvis_pos[:, 1:], [0.0, 0.8], atol=1e-4)
   assert pelvis_pos[0, 0] == 0.0
   assert 0.19 < pelvis_pos[-1, 0] <= 0.2
+
+
+def test_go2_kinematics_matches_mujoco_body_poses():
+  model = mujoco.MjModel.from_xml_path(str(GO2_XML))
+  data = mujoco.MjData(model)
+  q = torch.zeros(1, len(GO2_JOINT_NAMES))
+  position = torch.tensor([[0.1, -0.2, 0.4]])
+  quat = torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+  rotation = torch.eye(3).unsqueeze(0)
+  zeros = torch.zeros(1, 3)
+  kinematics = Go2Kinematics("cpu")
+  body_pos, body_rot, _, _ = kinematics.forward(
+    position,
+    rotation,
+    zeros,
+    zeros,
+    q,
+    torch.zeros_like(q),
+  )
+
+  data.qpos[:] = 0.0
+  data.qpos[0:3] = position[0].numpy()
+  data.qpos[3:7] = quat[0].numpy()
+  mujoco.mj_kinematics(model, data)
+  ids = [
+    mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+    for name in GO2_TRACKED_BODIES
+  ]
+  expected_pos = torch.from_numpy(data.xpos[ids].copy()).float()
+  assert torch.allclose(body_pos[0], expected_pos, atol=1e-5)
+  assert torch.isfinite(body_rot).all()
+
+
+def test_supermimic_networks_use_dynamic_joint_dimensions():
+  num_joints = 12
+  num_bodies = 13
+  context_dim = xi_dim(num_joints)
+  world_model = WorldModel(
+    hidden=(16,),
+    num_joints=num_joints,
+    invariant_input_dim=invariant_dim(num_joints),
+    sim_context_dim=context_dim,
+  )
+  policy = Policy(
+    obs_dim(num_joints),
+    goal_dim_per_frame(num_joints) * 10,
+    history=10,
+    latent_dim=4,
+    encoder_hidden=(16,),
+    decoder_hidden=(16,),
+    action_dim=num_joints,
+  )
+  assert world_model.input_dim == 65
+  assert world_model.output_dim == 36
+  assert critic_extra_dim(num_joints, num_bodies, context_dim) == 76
+  action = policy(torch.zeros(2, 10, 48), torch.zeros(2, 390))
+  assert action.shape == (2, num_joints)
+
+
+def test_go2_cycle_converter_maps_joints_and_repeats(tmp_path: Path):
+  dataset_dir = tmp_path / "go2_trot_test"
+  dataset_dir.mkdir()
+  source_q = np.tile(
+    [-0.9, 1.8, -0.1, -0.9, 1.8, 0.1, -0.9, 1.8, -0.1, -0.9, 1.8, 0.1],
+    (4, 1),
+  )
+  base = np.zeros((4, 6))
+  base[:, 0] = [0.0, 0.002, 0.004, 0.006]
+  base[:, 1] = 0.295
+  np.savez(
+    dataset_dir / "traj.npz",
+    t=np.arange(4) * 0.01,
+    base=base,
+    q=source_q,
+    qd=np.zeros_like(source_q),
+    tau=np.zeros_like(source_q),
+    contact=np.ones((4, 4), dtype=np.int64),
+    grf=np.zeros((4, 4, 2)),
+  )
+  (dataset_dir / "meta.json").write_text(
+    '{"id": "go2_trot_test", "category": "trot"}',
+    encoding="utf-8",
+  )
+  metadata = _build_go2_model_metadata()
+  converted, stats, warnings = convert_go2_clip(
+    dataset_dir,
+    *metadata,
+    target_duration_s=0.1,
+  )
+
+  assert stats.cycles > 1
+  assert not warnings
+  assert converted["joint_pos"].shape[1] == 12
+  assert converted["body_pos_w"].shape[1] == 13
+  assert tuple(converted["body_pos_w"].shape[2:]) == (3,)
+  assert np.allclose(
+    converted["joint_pos"][0],
+    [0.1, 0.9, -1.8, -0.1, 0.9, -1.8, 0.1, 0.9, -1.8, -0.1, 0.9, -1.8],
+    atol=1e-6,
+  )

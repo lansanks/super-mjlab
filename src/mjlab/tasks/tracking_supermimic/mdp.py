@@ -1,4 +1,4 @@
-"""Analytic observation, reward and termination heads for G1 tracking."""
+"""Analytic observation, reward and termination heads for SuperMimic tracking."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import torch
 
 from .constants import CONTROL_DT
-from .kinematics import G1Kinematics
+from .kinematics import MjcfKinematics
 from .motion import LafanMotionLibrary
 from .rotations import (
   mat_to_6d,
@@ -17,30 +17,59 @@ from .rotations import (
   yaw_mat,
 )
 
-OBS_DIM = 29 + 29 + 3 + 3 + 29 + 6
-XI_DIM = 33
-INV_DIM = 1 + 6 + 3 + 3 + 29 + 29
 
-OBS_NOISE = torch.cat(
-  (
-    torch.full((29,), 0.01),
-    torch.full((29,), 0.5),
-    torch.full((3,), 0.2),
-    torch.full((3,), 0.05),
-    torch.zeros(29),
-    torch.full((6,), 0.05),
+def obs_dim(num_joints: int) -> int:
+  return num_joints + num_joints + 3 + 3 + num_joints + 6
+
+
+def xi_dim(num_joints: int) -> int:
+  return 1 + num_joints + 3
+
+
+def invariant_dim(num_joints: int) -> int:
+  return 1 + 6 + 3 + 3 + num_joints + num_joints
+
+
+def goal_dim_per_frame(num_joints: int) -> int:
+  return 3 + 6 + 3 + 3 + num_joints + num_joints
+
+
+def critic_extra_dim(num_joints: int, num_bodies: int, context_dim: int) -> int:
+  return num_joints + 3 * num_bodies + 3 + 6 + context_dim
+
+
+def observation_noise(num_joints: int) -> torch.Tensor:
+  return torch.cat(
+    (
+      torch.full((num_joints,), 0.01),
+      torch.full((num_joints,), 0.5),
+      torch.full((3,), 0.2),
+      torch.full((3,), 0.05),
+      torch.zeros(num_joints),
+      torch.full((6,), 0.05),
+    )
   )
-)
-OBS_SCALE = torch.cat(
-  (
-    torch.ones(29),
-    torch.full((29,), 0.1),
-    torch.full((3,), 0.25),
-    torch.ones(3),
-    torch.ones(29),
-    torch.ones(6),
+
+
+def observation_scale(num_joints: int) -> torch.Tensor:
+  return torch.cat(
+    (
+      torch.ones(num_joints),
+      torch.full((num_joints,), 0.1),
+      torch.full((3,), 0.25),
+      torch.ones(3),
+      torch.ones(num_joints),
+      torch.ones(6),
+    )
   )
-)
+
+
+# G1 defaults are kept as module constants for backward compatibility.
+OBS_DIM = obs_dim(29)
+XI_DIM = xi_dim(29)
+INV_DIM = invariant_dim(29)
+OBS_NOISE = observation_noise(29)
+OBS_SCALE = observation_scale(29)
 MAX_STEP_REWARD = (4 * 1.0 + 2 * 0.5) * CONTROL_DT
 
 
@@ -64,14 +93,19 @@ def flatten_state(state):
   return torch.cat((p, mat_to_quat(rot), lin_vel, ang_vel, q, qd), -1)
 
 
-def unflatten_state(flat: torch.Tensor):
+def unflatten_state(flat: torch.Tensor, num_joints: int = 29):
+  state_end = 13 + 2 * num_joints
+  if flat.shape[-1] != state_end:
+    raise ValueError(
+      f"Expected a {state_end}-D state for {num_joints} joints, got {flat.shape[-1]}."
+    )
   return (
     flat[..., 0:3],
     quat_to_mat(flat[..., 3:7]),
     flat[..., 7:10],
     flat[..., 10:13],
-    flat[..., 13:42],
-    flat[..., 42:71],
+    flat[..., 13 : 13 + num_joints],
+    flat[..., 13 + num_joints : state_end],
   )
 
 
@@ -96,7 +130,7 @@ def invariant_features(state) -> torch.Tensor:
 class MDP:
   def __init__(
     self,
-    kinematics: G1Kinematics,
+    kinematics: MjcfKinematics,
     motion: LafanMotionLibrary,
     default_joint_pos: torch.Tensor,
     cfg: RewardCfg | None = None,
@@ -105,12 +139,15 @@ class MDP:
     self.motion = motion
     self.cfg = cfg or RewardCfg()
     self.default_joint_pos = default_joint_pos
+    self.num_joints = int(default_joint_pos.shape[-1])
+    self.num_bodies = len(kinematics.tracked_indices)
+    self.xi_dim = xi_dim(self.num_joints)
     middle = (kinematics.q_lo + kinematics.q_hi) / 2
     half = (kinematics.q_hi - kinematics.q_lo) / 2
     self.soft_lo = middle - half * self.cfg.soft_limit_factor
     self.soft_hi = middle + half * self.cfg.soft_limit_factor
-    self.obs_noise = OBS_NOISE.to(default_joint_pos.device)
-    self.obs_scale = OBS_SCALE.to(default_joint_pos.device)
+    self.obs_noise = observation_noise(self.num_joints).to(default_joint_pos.device)
+    self.obs_scale = observation_scale(self.num_joints).to(default_joint_pos.device)
 
   def obs(
     self,
@@ -121,7 +158,7 @@ class MDP:
   ) -> torch.Tensor:
     _, rot, _, ang_vel, q, qd = state
     rot_t = rot.transpose(-1, -2)
-    joint_offset = sim_context[..., 1:30]
+    joint_offset = sim_context[..., 1 : 1 + self.num_joints]
     gravity_body = -rot[..., 2, :]
     reference_relative_rot = mat_to_6d(rot_t @ self.motion.root_R[reference_frame])
     return torch.cat(
@@ -262,15 +299,15 @@ class MDP:
     )
 
 
-CRITIC_EXTRA = 29 + 14 * 3 + 3 + 6 + XI_DIM
+CRITIC_EXTRA = critic_extra_dim(29, 14, XI_DIM)
 
 
-def normalize_xi(xi: torch.Tensor) -> torch.Tensor:
+def normalize_xi(xi: torch.Tensor, num_joints: int = 29) -> torch.Tensor:
   return torch.cat(
     (
       (xi[..., :1] - 0.75) / 0.45,
-      xi[..., 1:30] / 0.01,
-      xi[..., 30:33] / 0.05,
+      xi[..., 1 : 1 + num_joints] / 0.01,
+      xi[..., 1 + num_joints : 4 + num_joints] / 0.05,
     ),
     -1,
   )

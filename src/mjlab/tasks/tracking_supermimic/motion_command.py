@@ -52,7 +52,11 @@ class LafanMotionCommand(MotionCommand):
         "Tracking body names do not match the robot body order: "
         f"expected {cfg.body_names}, found {found_names}"
       )
-    self.motion = LafanMotionLibrary(cfg.motion_file, self.device)
+    self.motion: LafanMotionLibrary = LafanMotionLibrary(
+      cfg.motion_file,
+      self.device,
+      anchor_body_name=cfg.anchor_body_name,
+    )
     if tuple(self.motion.body_names) != tuple(cfg.body_names):
       raise ValueError(
         "Motion and robot bodies differ: "
@@ -208,7 +212,7 @@ class LafanMotionCommand(MotionCommand):
     self.start_bin[env_ids] = self.motion.frame_bin[frames]
 
     root_pos = self.motion.root_p[frames].clone()
-    root_quat = self.body_quat_w[env_ids, 0].clone()
+    root_quat = self.body_quat_w[env_ids, self.motion_anchor_body_index].clone()
     root_lin_vel = self.motion.root_v[frames].clone()
     root_ang_vel = self.motion.root_w[frames].clone()
     joint_pos = self.motion.q[frames].clone()
@@ -271,7 +275,7 @@ class LafanMotionCommand(MotionCommand):
     self,
     env_ids: torch.Tensor,
     root_pos: torch.Tensor,
-    root_quat: torch.Tensor,
+    root_ori: torch.Tensor,
     root_lin_vel: torch.Tensor,
     root_ang_vel: torch.Tensor,
     joint_pos: torch.Tensor,
@@ -281,12 +285,12 @@ class LafanMotionCommand(MotionCommand):
     joint_pos = torch.clip(joint_pos, limits[:, :, 0], limits[:, :, 1])
     self.robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
     self.robot.write_root_state_to_sim(
-      torch.cat((root_pos, root_quat, root_lin_vel, root_ang_vel), dim=-1),
+      torch.cat((root_pos, root_ori, root_lin_vel, root_ang_vel), dim=-1),
       env_ids=env_ids,
     )
     self.robot.reset(env_ids=env_ids)
 
-  def _update_command(self, env_ids: torch.Tensor | None) -> None:
+  def _update_command(self, env_ids: torch.Tensor | None = None) -> None:
     if env_ids is None:
       self.time_steps += 1
       self.time_steps.clamp_max_(self.clip_end)
@@ -313,7 +317,6 @@ class LafanMotionCommand(MotionCommand):
       self.motion.q[frames],
       self.motion.qd[frames],
     )
-
 
   def create_gui(
     self,

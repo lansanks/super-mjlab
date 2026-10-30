@@ -1,4 +1,4 @@
-"""Evaluate a SuperMimic G1 checkpoint once on every motion clip."""
+"""Evaluate a SuperMimic checkpoint once on every motion clip."""
 
 from __future__ import annotations
 
@@ -9,23 +9,27 @@ from pathlib import Path
 import torch
 
 from mjlab.envs import ManagerBasedRlEnv
-from mjlab.tasks.registry import load_env_cfg
+from mjlab.tasks.registry import load_env_cfg, load_runner_cls
+from mjlab.tasks.tracking.mdp import MotionCommandCfg
 from mjlab.tasks.tracking_supermimic.mdp import MAX_STEP_REWARD
-from mjlab.tasks.tracking_supermimic.runner import (
-  TrackingSuperMimicRunner,
-)
 
 
 def main() -> None:
   parser = argparse.ArgumentParser()
+  parser.add_argument(
+    "--task",
+    default="Mjlab-Tracking-SuperMimic-Unitree-G1",
+  )
   parser.add_argument("--checkpoint", type=Path, required=True)
   parser.add_argument("--motion-file", type=Path, required=True)
   parser.add_argument("--device", default="cuda:0")
   parser.add_argument("--output", type=Path, default=Path("eval_supermimic.json"))
   args = parser.parse_args()
 
-  cfg = load_env_cfg("Mjlab-Tracking-SuperMimic-Unitree-G1")
+  cfg = load_env_cfg(args.task)
   motion_cfg = cfg.commands["motion"]
+  if not isinstance(motion_cfg, MotionCommandCfg):
+    raise TypeError(f"Task {args.task} does not use a motion command.")
   motion_cfg.motion_file = str(args.motion_file)
   motion_cfg.pose_range = {}
   motion_cfg.velocity_range = {}
@@ -42,7 +46,11 @@ def main() -> None:
     LafanMotionLibrary,
   )
 
-  motion = LafanMotionLibrary(args.motion_file, "cpu")
+  motion = LafanMotionLibrary(
+    args.motion_file,
+    "cpu",
+    anchor_body_name=motion_cfg.anchor_body_name,
+  )
   cfg.scene.num_envs = motion.num_clips
   env = ManagerBasedRlEnv(cfg, device=args.device)
   checkpoint = torch.load(
@@ -59,7 +67,10 @@ def main() -> None:
       "logger": "none",
     }
   )
-  runner = TrackingSuperMimicRunner(
+  runner_cls = load_runner_cls(args.task)
+  if runner_cls is None:
+    raise RuntimeError(f"Task {args.task} does not define a custom runner.")
+  runner = runner_cls(
     env,
     runner_cfg,
     device=args.device,
@@ -70,7 +81,11 @@ def main() -> None:
   returns = torch.zeros(env.num_envs, device=env.device)
   failures = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
   completed = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
-  previous_action = torch.zeros(env.num_envs, 29, device=env.device)
+  previous_action = torch.zeros(
+    env.num_envs,
+    runner.num_joints,
+    device=env.device,
+  )
   max_steps = int(motion.clip_len.max().item()) + 2
   for _ in range(max_steps):
     action = policy(None)

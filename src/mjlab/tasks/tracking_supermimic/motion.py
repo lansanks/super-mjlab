@@ -17,6 +17,7 @@ class LafanMotionLibrary:
     self,
     motion_file: str | Path,
     device: str | torch.device,
+    anchor_body_name: str = "pelvis",
   ):
     self.device = torch.device(device)
     path = Path(motion_file)
@@ -74,19 +75,22 @@ class LafanMotionLibrary:
 
     if self.body_p.shape[1] != len(self.body_names):
       raise ValueError("body_pos_w and body_names have inconsistent dimensions.")
-    if "pelvis" not in self.body_names:
-      raise ValueError("Tracking motion must contain the pelvis body.")
+    if anchor_body_name not in self.body_names:
+      raise ValueError(
+        f"Tracking motion must contain the anchor body {anchor_body_name!r}."
+      )
 
     self.num_frames = int(self.q.shape[0])
     if self.num_frames == 0:
       raise ValueError("Motion file contains no frames.")
     self.num_clips = int(self.clip_len.shape[0])
     self.clip_end = self.clip_start + self.clip_len - 1
-    self.pelvis_index = self.body_names.index("pelvis")
-    self.root_p = self.body_p[:, self.pelvis_index]
-    self.root_R = self.body_R[:, self.pelvis_index]
-    self.root_v = self.body_v[:, self.pelvis_index]
-    self.root_w = self.body_w[:, self.pelvis_index]
+    self.anchor_body_name = anchor_body_name
+    self.anchor_body_index = self.body_names.index(anchor_body_name)
+    self.root_p = self.body_p[:, self.anchor_body_index]
+    self.root_R = self.body_R[:, self.anchor_body_index]
+    self.root_v = self.body_v[:, self.anchor_body_index]
+    self.root_w = self.body_w[:, self.anchor_body_index]
 
     root_rt = self.root_R.transpose(-1, -2)
     self.root_v_local = (root_rt @ self.root_v.unsqueeze(-1)).squeeze(-1)

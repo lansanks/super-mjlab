@@ -196,6 +196,8 @@ def main():
     env, device, n_rows, n_cols = build_env(level, "cuda:0")
     if runner is None:
       runner_cls = load_runner_cls(TASK)
+      if runner_cls is None:
+        raise RuntimeError(f"Task {TASK!r} has no custom runner class.")
       runner = runner_cls(env, asdict(load_rl_cfg(TASK)), device=device)
       print(
         f"[INFO] env built ({n_rows} rows x {n_cols} cols) in {time.time() - t0:.1f}s",

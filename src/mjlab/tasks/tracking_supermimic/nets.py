@@ -1,4 +1,4 @@
-"""World model, policy and critic for G1 LAFAN1 tracking."""
+"""World model, policy and critic for SuperMimic tracking."""
 
 from __future__ import annotations
 
@@ -80,13 +80,21 @@ def run_mlp(network: nn.Module, value: torch.Tensor) -> torch.Tensor:
 class WorldModel(nn.Module):
   """Predict heading-invariant frame-local state increments."""
 
-  def __init__(self, hidden: tuple[int, ...] = (2048, 2048, 2048)):
+  def __init__(
+    self,
+    hidden: tuple[int, ...] = (2048, 2048, 2048),
+    num_joints: int = NUM_JOINTS,
+    invariant_input_dim: int = INV_DIM,
+    sim_context_dim: int = XI_DIM,
+  ):
     super().__init__()
-    self.input_dim = INV_DIM + NUM_JOINTS + XI_DIM
+    self.num_joints = num_joints
+    self.input_dim = invariant_input_dim + num_joints + sim_context_dim
+    self.output_dim = 12 + 2 * num_joints
     self.net = mlp(
       self.input_dim,
       hidden,
-      WM_OUT,
+      self.output_dim,
       activation=nn.SiLU,
       layer_norm=True,
     )
@@ -95,7 +103,7 @@ class WorldModel(nn.Module):
     nn.init.zeros_(last.weight)
     nn.init.zeros_(last.bias)
     self.input_norm = RunningNorm(self.input_dim)
-    self.output_norm = RunningNorm(WM_OUT, eps=1e-4)
+    self.output_norm = RunningNorm(self.output_dim, eps=1e-4)
 
   def inputs(
     self,
@@ -105,8 +113,7 @@ class WorldModel(nn.Module):
   ) -> torch.Tensor:
     return torch.cat((invariant_features(state), action, sim_context), -1)
 
-  @staticmethod
-  def targets(state, next_state) -> torch.Tensor:
+  def targets(self, state, next_state) -> torch.Tensor:
     p, rot, lin_vel, ang_vel, q, qd = state
     p1, rot1, lin_vel1, ang_vel1, q1, qd1 = next_state
     heading = yaw_mat(rot)
@@ -136,7 +143,7 @@ class WorldModel(nn.Module):
     )
     delta = normalized * self.output_norm.std() + self.output_norm.mean
     dp, dtheta, dlin, dang, dq, dqd = delta.split(
-      (3, 3, 3, 3, NUM_JOINTS, NUM_JOINTS), -1
+      (3, 3, 3, 3, self.num_joints, self.num_joints), -1
     )
     heading = yaw_mat(rot)
     return (
@@ -148,8 +155,7 @@ class WorldModel(nn.Module):
       qd + dqd,
     )
 
-  @staticmethod
-  def state_error(predicted, target) -> torch.Tensor:
+  def state_error(self, predicted, target) -> torch.Tensor:
     p, rot, lin_vel, ang_vel, q, qd = target
     p_hat, rot_hat, lin_hat, ang_hat, q_hat, qd_hat = predicted
     heading = yaw_mat(rot)
@@ -176,6 +182,7 @@ class Policy(nn.Module):
     latent_dim: int = 32,
     encoder_hidden: tuple[int, ...] = (2048, 1024, 512, 256),
     decoder_hidden: tuple[int, ...] = (2048, 1024, 512, 256),
+    action_dim: int = NUM_JOINTS,
   ):
     super().__init__()
     self.history = history
@@ -185,7 +192,7 @@ class Policy(nn.Module):
     self.decoder = mlp(
       latent_dim + obs_dim * history,
       decoder_hidden,
-      NUM_JOINTS,
+      action_dim,
     )
     last = self.decoder[-1]
     assert isinstance(last, nn.Linear)

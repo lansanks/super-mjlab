@@ -1,4 +1,4 @@
-"""SuperMimic training loop for mjlab G1 LAFAN1 tracking."""
+"""Robot-agnostic SuperMimic training loop for mjlab."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import csv
 import math
 import os
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import torch
@@ -14,17 +15,24 @@ import torch.nn as nn
 import mjlab.tasks.tracking_supermimic.nets as networks
 
 from .buffer import ReplayBuffer
-from .constants import G1_JOINT_NAMES, NUM_JOINTS, TRACKED_BODIES
-from .kinematics import G1Kinematics
+from .constants import (
+  ANCHOR_BODY,
+  G1_JOINT_NAMES,
+  TRACKED_BODIES,
+)
+from .kinematics import G1Kinematics, KinematicsFactory
 from .mdp import (
-  CRITIC_EXTRA,
-  INV_DIM,
   MAX_STEP_REWARD,
   MDP,
-  OBS_DIM,
+  RewardCfg,
+  critic_extra_dim,
   flatten_state,
+  goal_dim_per_frame,
+  invariant_dim,
   normalize_xi,
+  obs_dim,
   unflatten_state,
+  xi_dim,
 )
 from .motion_command import LafanMotionCommand
 from .nets import Critic, Policy, WorldModel
@@ -34,6 +42,30 @@ from .rotations import quat_to_mat
 def _set_requires_grad(module: nn.Module, flag: bool) -> None:
   for parameter in module.parameters():
     parameter.requires_grad_(flag)
+
+
+@dataclass(frozen=True)
+class RobotMotionSpec:
+  """Robot-specific metadata required by the shared SuperMimic runner."""
+
+  joint_names: tuple[str, ...]
+  tracked_bodies: tuple[str, ...]
+  anchor_body: str
+  kinematics_cls: KinematicsFactory
+  foot_geom_regex: str
+  sim_context_body: str
+  reward_cfg: RewardCfg | None = None
+
+
+G1_ROBOT_SPEC = RobotMotionSpec(
+  joint_names=G1_JOINT_NAMES,
+  tracked_bodies=TRACKED_BODIES,
+  anchor_body=ANCHOR_BODY,
+  kinematics_cls=G1Kinematics,
+  foot_geom_regex=r"^(left|right)_foot[1-7]_collision$",
+  sim_context_body="torso_link",
+  reward_cfg=None,
+)
 
 
 class TrackingSuperMimicRunner:
@@ -46,6 +78,7 @@ class TrackingSuperMimicRunner:
     log_dir: str | None = None,
     device: str = "cpu",
     registry_name: str | None = None,
+    robot_spec: RobotMotionSpec | None = None,
     **kwargs,
   ):
     del registry_name, kwargs
@@ -62,43 +95,74 @@ class TrackingSuperMimicRunner:
       )
     self.command = command
     self.motion = command.motion
+    self.robot_spec = robot_spec or G1_ROBOT_SPEC
     self.log_dir = log_dir or os.getcwd()
     os.makedirs(self.log_dir, exist_ok=True)
 
-    if tuple(self.robot.joint_names) != G1_JOINT_NAMES:
-      joint_ids, names = self.robot.find_joints(G1_JOINT_NAMES, preserve_order=True)
-      if tuple(names) != G1_JOINT_NAMES:
+    self.num_joints = len(self.robot_spec.joint_names)
+    if tuple(self.robot.joint_names) != self.robot_spec.joint_names:
+      joint_ids, names = self.robot.find_joints(
+        self.robot_spec.joint_names,
+        preserve_order=True,
+      )
+      if tuple(names) != self.robot_spec.joint_names:
         raise ValueError(
-          "Robot joint order does not contain the expected 29-DoF G1 joints."
+          "Robot joint order does not contain the expected "
+          f"{self.num_joints}-DoF joints."
         )
       self.joint_ids = torch.tensor(joint_ids, dtype=torch.long, device=self.device)
     else:
-      self.joint_ids = torch.arange(NUM_JOINTS, dtype=torch.long, device=self.device)
+      self.joint_ids = torch.arange(
+        self.num_joints,
+        dtype=torch.long,
+        device=self.device,
+      )
 
-    body_ids, body_names = self.robot.find_bodies(TRACKED_BODIES, preserve_order=True)
-    if tuple(body_names) != TRACKED_BODIES:
+    body_ids, body_names = self.robot.find_bodies(
+      self.robot_spec.tracked_bodies,
+      preserve_order=True,
+    )
+    if tuple(body_names) != self.robot_spec.tracked_bodies:
       raise ValueError(
         f"Robot bodies differ from expected tracking bodies: {body_names}"
       )
     self.body_ids = torch.tensor(body_ids, dtype=torch.long, device=self.device)
+    if tuple(self.motion.body_names) != self.robot_spec.tracked_bodies:
+      raise ValueError(
+        f"Motion bodies differ from expected tracking bodies: {self.motion.body_names}"
+      )
 
     self.default_joint_pos = (
       self.robot.data.default_joint_pos[:, self.joint_ids][0].clone().float()
     )
-    self.kinematics = G1Kinematics(self.device)
+    self.kinematics = self.robot_spec.kinematics_cls(self.device)
     self.mdp = MDP(
       self.kinematics,
       self.motion,
       self.default_joint_pos,
+      cfg=self.robot_spec.reward_cfg,
+    )
+    self.num_bodies = self.mdp.num_bodies
+    self.obs_dim = obs_dim(self.num_joints)
+    self.sim_context_dim = xi_dim(self.num_joints)
+    self.invariant_dim = invariant_dim(self.num_joints)
+    self.goal_dim_per_frame = goal_dim_per_frame(self.num_joints)
+    self.state_dim = 13 + 2 * self.num_joints
+    self.critic_extra_dim = critic_extra_dim(
+      self.num_joints,
+      self.num_bodies,
+      self.sim_context_dim,
     )
     self._setup_sim_context()
 
     self.num_envs = int(self.env.num_envs)
     self.action_dim = int(self.env.action_manager.total_action_dim)
+    if self.action_dim != self.num_joints:
+      raise ValueError(f"Expected {self.num_joints} actions, got {self.action_dim}.")
     self.history = int(self.cfg.get("obs_history", 10))
     self.horizon = int(self.cfg.get("horizon", 32))
     self.goal_frames = int(self.cfg.get("goal_frames", 10))
-    self.goal_dim = 73 * self.goal_frames
+    self.goal_dim = self.goal_dim_per_frame * self.goal_frames
     self.window = int(self.cfg.get("wm_window", 8))
     self.wm_batch = int(self.cfg.get("wm_batch", 512))
     self.wm_batches = int(self.cfg.get("wm_batches", 4))
@@ -130,16 +194,22 @@ class TrackingSuperMimicRunner:
     critic_hidden = tuple(self.cfg.get("critic_hidden", (256, 128)))
     latent_dim = int(self.cfg.get("latent_dim", 32))
 
-    self.world_model = WorldModel(hidden=wm_hidden).to(self.device)
+    self.world_model = WorldModel(
+      hidden=wm_hidden,
+      num_joints=self.num_joints,
+      invariant_input_dim=self.invariant_dim,
+      sim_context_dim=self.sim_context_dim,
+    ).to(self.device)
     self.policy = Policy(
-      OBS_DIM,
+      self.obs_dim,
       self.goal_dim,
       history=self.history,
       latent_dim=latent_dim,
       encoder_hidden=encoder_hidden,
       decoder_hidden=decoder_hidden,
+      action_dim=self.num_joints,
     ).to(self.device)
-    critic_input_dim = INV_DIM + CRITIC_EXTRA + self.goal_dim
+    critic_input_dim = self.invariant_dim + self.critic_extra_dim + self.goal_dim
     self.critic = Critic(critic_input_dim, hidden=critic_hidden).to(self.device)
     self.opt_wm = torch.optim.Adam(self.world_model.parameters(), lr=self.learning_rate)
     self.opt_policy = torch.optim.Adam(
@@ -148,7 +218,14 @@ class TrackingSuperMimicRunner:
       betas=(0.9, 0.95),
     )
     self.opt_critic = torch.optim.Adam(self.critic.parameters(), lr=self.learning_rate)
-    self.buffer = ReplayBuffer(self.buffer_steps, self.num_envs, self.device)
+    self.buffer = ReplayBuffer(
+      self.buffer_steps,
+      self.num_envs,
+      self.device,
+      num_joints=self.num_joints,
+      state_dim=self.state_dim,
+      sim_context_dim=self.sim_context_dim,
+    )
 
     self.err_floor = torch.cat(
       (
@@ -156,8 +233,8 @@ class TrackingSuperMimicRunner:
         torch.full((3,), 5e-3),
         torch.full((3,), 2e-2),
         torch.full((3,), 5e-2),
-        torch.full((NUM_JOINTS,), 3e-3),
-        torch.full((NUM_JOINTS,), 5e-2),
+        torch.full((self.num_joints,), 3e-3),
+        torch.full((self.num_joints,), 5e-2),
       )
     ).to(self.device)
 
@@ -166,12 +243,16 @@ class TrackingSuperMimicRunner:
     self.current_xi = self.sim_context()
     observation = self.mdp.obs(
       self.current_state,
-      torch.zeros(self.num_envs, NUM_JOINTS, device=self.device),
+      torch.zeros(self.num_envs, self.num_joints, device=self.device),
       self.current_xi,
       self.command.time_steps,
     )
     self.obs_hist = observation.unsqueeze(1).repeat(1, self.history, 1)
-    self.previous_action = torch.zeros(self.num_envs, NUM_JOINTS, device=self.device)
+    self.previous_action = torch.zeros(
+      self.num_envs,
+      self.num_joints,
+      device=self.device,
+    )
     self.episode_step = self.env.episode_length_buf.clone()
     self.episode_return = torch.zeros(self.num_envs, device=self.device)
     self.episode_discounted_return = torch.zeros(self.num_envs, device=self.device)
@@ -227,16 +308,18 @@ class TrackingSuperMimicRunner:
     print(f"[SuperMimic] torch.compile enabled (mode={mode}): {', '.join(names)}")
 
   def _setup_sim_context(self) -> None:
-    geom_ids, _ = self.robot.find_geoms(r"^(left|right)_foot[1-7]_collision$")
+    geom_ids, _ = self.robot.find_geoms(self.robot_spec.foot_geom_regex)
     self.foot_geom_ids = self.robot.indexing.geom_ids[
       torch.tensor(geom_ids, dtype=torch.long, device=self.device)
     ]
-    torso_ids, _ = self.robot.find_bodies("torso_link")
-    if len(torso_ids) != 1:
-      raise ValueError("Expected exactly one torso_link body.")
-    self.torso_global_body_id = int(self.robot.indexing.body_ids[torso_ids[0]])
-    self.default_torso_com = self.env.sim.mj_model.body_ipos[
-      self.torso_global_body_id
+    context_body_ids, _ = self.robot.find_bodies(self.robot_spec.sim_context_body)
+    if len(context_body_ids) != 1:
+      raise ValueError(
+        f"Expected exactly one sim-context body {self.robot_spec.sim_context_body!r}."
+      )
+    self.context_global_body_id = int(self.robot.indexing.body_ids[context_body_ids[0]])
+    self.default_context_com = self.env.sim.mj_model.body_ipos[
+      self.context_global_body_id
     ].copy()
 
   def state(self):
@@ -259,9 +342,9 @@ class TrackingSuperMimicRunner:
     else:
       friction = torch.full((self.num_envs,), 0.75, device=self.device)
     bias = self.robot.data.encoder_bias[:, self.joint_ids].float()
-    current_com = self.env.sim.model.body_ipos[:, self.torso_global_body_id].float()
+    current_com = self.env.sim.model.body_ipos[:, self.context_global_body_id].float()
     com_offset = current_com - torch.as_tensor(
-      self.default_torso_com, device=self.device
+      self.default_context_com, device=self.device
     ).float().unsqueeze(0)
     return torch.cat((friction.unsqueeze(-1), bias, com_offset), -1)
 
@@ -357,7 +440,11 @@ class TrackingSuperMimicRunner:
       }
     )
     self.world_model.input_norm.update(
-      self.world_model.inputs(state, noisy_action, normalize_xi(sim_context))
+      self.world_model.inputs(
+        state,
+        noisy_action,
+        normalize_xi(sim_context, self.num_joints),
+      )
     )
     self.world_model.output_norm.update(self.world_model.targets(state, next_state))
 
@@ -423,16 +510,16 @@ class TrackingSuperMimicRunner:
     if self.buffer.size < self.window:
       return 0.0, 0.0
     windows = self.buffer.sample_windows(self.wm_batch, self.window)
-    predicted_state = unflatten_state(windows["s"][:, 0])
+    predicted_state = unflatten_state(windows["s"][:, 0], self.num_joints)
     loss = torch.zeros((), device=self.device)
     last_error = torch.zeros((), device=self.device)
     for step in range(self.window):
       predicted_state = self.world_model.step(
         predicted_state,
         windows["a"][:, step],
-        normalize_xi(windows["xi"][:, step]),
+        normalize_xi(windows["xi"][:, step], self.num_joints),
       )
-      target_state = unflatten_state(windows["s1"][:, step])
+      target_state = unflatten_state(windows["s1"][:, step], self.num_joints)
       std = torch.maximum(self.world_model.output_norm.std(), self.err_floor)
       error = (self.world_model.state_error(predicted_state, target_state) / std) ** 2
       error = error.mean(-1)
@@ -450,13 +537,13 @@ class TrackingSuperMimicRunner:
 
   def _policy_update(self):
     start, history = self._sample_valid_starts(self.policy_batch)
-    state = unflatten_state(start["s"])
+    state = unflatten_state(start["s"], self.num_joints)
     sim_context = start["xi"]
-    normalized_context = normalize_xi(sim_context)
+    normalized_context = normalize_xi(sim_context, self.num_joints)
     frame = start["f"]
     previous_action = start["a_prev"]
     history_observation = self.mdp.obs(
-      unflatten_state(history["s"]),
+      unflatten_state(history["s"], self.num_joints),
       history["a_prev"],
       history["xi"],
       history["f"],

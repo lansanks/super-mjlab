@@ -37,7 +37,15 @@ def test_tracking_tasks_have_self_collision_sensor(
   tracking_task_ids: list[str],
 ) -> None:
   """All tracking tasks should have a self_collision sensor."""
+  supermimic_task_ids = {
+    "Mjlab-Tracking-SuperMimic-Unitree-G1",
+    "Mjlab-Tracking-SuperMimic-Unitree-Go2",
+  }
   for task_id in tracking_task_ids:
+    # SuperMimic disables self-collision sensing to match its reference
+    # implementation; collisions with the environment remain enabled.
+    if task_id in supermimic_task_ids:
+      continue
     cfg = load_env_cfg(task_id)
 
     assert cfg.scene.sensors is not None, f"Task {task_id} has no sensors"

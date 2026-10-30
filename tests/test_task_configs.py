@@ -67,7 +67,15 @@ def test_play_mode_observation_corruption_disabled(all_task_ids: list[str]) -> N
 
 def test_training_mode_observation_corruption_enabled(all_task_ids: list[str]) -> None:
   """Training mode tasks should have observation corruption enabled for policy."""
+  custom_corruption_tasks = {
+    "Mjlab-Tracking-SuperMimic-Unitree-G1",
+    "Mjlab-Tracking-SuperMimic-Unitree-Go2",
+  }
   for task_id in all_task_ids:
+    # SuperMimic runners add noise to their analytic observations directly;
+    # manager observation groups are retained only for the VecEnv interface.
+    if task_id in custom_corruption_tasks:
+      continue
     cfg = load_env_cfg(task_id)
 
     assert "actor" in cfg.observations, (
