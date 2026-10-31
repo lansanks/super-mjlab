@@ -4,6 +4,7 @@ from pathlib import Path
 
 import mujoco
 import numpy as np
+import pytest
 import torch
 
 from mjlab.asset_zoo.robots.unitree_g1.g1_constants import G1_XML
@@ -22,6 +23,7 @@ from mjlab.tasks.tracking_supermimic.mdp import (
 )
 from mjlab.tasks.tracking_supermimic.motion import LafanMotionLibrary
 from mjlab.tasks.tracking_supermimic.nets import Policy, WorldModel
+from mjlab.tasks.tracking_supermimic.onnx import export_policy_to_onnx
 from mjlab.tasks.tracking_supermimic.scripts.convert_lafan1 import (
   _build_model_metadata,
   convert_clip,
@@ -242,3 +244,40 @@ def test_go2_cycle_converter_maps_joints_and_repeats(tmp_path: Path):
     [0.1, 0.9, -1.8, -0.1, 0.9, -1.8, 0.1, 0.9, -1.8, -0.1, 0.9, -1.8],
     atol=1e-6,
   )
+
+
+def test_supermimic_policy_onnx_matches_pytorch(tmp_path: Path):
+  ort = pytest.importorskip("onnxruntime")
+  torch.manual_seed(7)
+  policy = Policy(
+    obs_dim=48,
+    goal_dim=78,
+    history=3,
+    latent_dim=4,
+    encoder_hidden=(16,),
+    decoder_hidden=(16,),
+    action_dim=12,
+  )
+  observation = torch.randn(1, 3, 48)
+  goal = torch.randn(1, 78)
+  expected = torch.clamp(policy(observation, goal), -20, 20).detach()
+  output_path = tmp_path / "policy.onnx"
+  export_policy_to_onnx(
+    policy,
+    output_path,
+    history=3,
+    observation_dim=48,
+    goal_dim=78,
+    action_clip=20,
+  )
+
+  session = ort.InferenceSession(str(output_path))
+  actual = session.run(
+    None,
+    {
+      "observation_history": observation.numpy(),
+      "goal": goal.numpy(),
+    },
+  )[0]
+  assert actual.shape == (1, 12)
+  np.testing.assert_allclose(actual, expected.numpy(), atol=1e-4)

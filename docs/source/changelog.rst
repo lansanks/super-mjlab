@@ -13,7 +13,9 @@ Added
   runner. A cycle converter extends periodic clips for the 32-step imagination
   window, maps the source leg convention to the Go2 model, and generates FK
   trajectories for all 13 tracked bodies. The shared SuperMimic runner is now
-  parameterized by robot dimensions while preserving the G1 defaults.
+  parameterized by robot dimensions while preserving the G1 defaults. It also
+  exports the deployment policy automatically whenever a checkpoint is saved,
+  with fixed observation-history and goal inputs.
 
 - Added ``Mjlab-Velocity-SuperMimic-Unitree-Go1`` and its flat variant, which
   train the stock Go1 velocity task with a SuperMimic model-based loop instead

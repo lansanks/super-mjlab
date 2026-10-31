@@ -70,3 +70,32 @@ uv run python -m mjlab.tasks.tracking_supermimic.scripts.evaluate \
   --motion-file data/go2_cycles/motion.npz
 ```
 
+## ONNX 导出
+
+SuperMimic runner 在每次保存 checkpoint 时会自动在同目录生成与运行目录同名的
+ONNX 文件。例如：
+
+```text
+logs/rsl_rl/go2_cycles_tracking_supermimic/<run>/<run>.onnx
+```
+
+已有 checkpoint 可以单独导出：
+
+```bash
+uv run python -m mjlab.tasks.tracking_supermimic.scripts.export_onnx \
+  --task Mjlab-Tracking-SuperMimic-Unitree-Go2 \
+  --checkpoint <checkpoint.pt> \
+  --motion-file data/go2_cycles/motion.npz \
+  --device cpu
+```
+
+导出的策略接口是固定的：
+
+```text
+observation_history: [1, 10, 48]
+goal:                [1, 390]
+actions:             [1, 12]
+```
+
+观测和目标归一化 buffer 已包含在 ONNX 图中。
+

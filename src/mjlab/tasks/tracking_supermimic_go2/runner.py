@@ -12,6 +12,7 @@ from .constants import ANCHOR_BODY, GO2_JOINT_NAMES, TRACKED_BODIES
 from .kinematics import Go2Kinematics
 
 GO2_ROBOT_SPEC = RobotMotionSpec(
+  task_id="Mjlab-Tracking-SuperMimic-Unitree-Go2",
   joint_names=GO2_JOINT_NAMES,
   tracked_bodies=TRACKED_BODIES,
   anchor_body=ANCHOR_BODY,

@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 
 import mjlab.tasks.tracking_supermimic.nets as networks
+from mjlab.rl.exporter_utils import attach_metadata_to_onnx, get_base_metadata
 
 from .buffer import ReplayBuffer
 from .constants import (
@@ -36,6 +37,7 @@ from .mdp import (
 )
 from .motion_command import LafanMotionCommand
 from .nets import Critic, Policy, WorldModel
+from .onnx import export_policy_to_onnx
 from .rotations import quat_to_mat
 
 
@@ -48,6 +50,7 @@ def _set_requires_grad(module: nn.Module, flag: bool) -> None:
 class RobotMotionSpec:
   """Robot-specific metadata required by the shared SuperMimic runner."""
 
+  task_id: str
   joint_names: tuple[str, ...]
   tracked_bodies: tuple[str, ...]
   anchor_body: str
@@ -58,6 +61,7 @@ class RobotMotionSpec:
 
 
 G1_ROBOT_SPEC = RobotMotionSpec(
+  task_id="Mjlab-Tracking-SuperMimic-Unitree-G1",
   joint_names=G1_JOINT_NAMES,
   tracked_bodies=TRACKED_BODIES,
   anchor_body=ANCHOR_BODY,
@@ -193,6 +197,9 @@ class TrackingSuperMimicRunner:
     decoder_hidden = tuple(self.cfg.get("policy_decoder_hidden", (512, 512, 512)))
     critic_hidden = tuple(self.cfg.get("critic_hidden", (256, 128)))
     latent_dim = int(self.cfg.get("latent_dim", 32))
+    self.policy_encoder_hidden = encoder_hidden
+    self.policy_decoder_hidden = decoder_hidden
+    self.policy_latent_dim = latent_dim
 
     self.world_model = WorldModel(
       hidden=wm_hidden,
@@ -906,6 +913,100 @@ class TrackingSuperMimicRunner:
     temporary = path + ".tmp"
     torch.save(payload, temporary)
     os.replace(temporary, path)
+    try:
+      policy_dir = os.path.dirname(path) or "."
+      filename = f"{os.path.basename(os.path.abspath(policy_dir))}.onnx"
+      onnx_path = self.export_policy_to_onnx(policy_dir, filename)
+      if self._wandb is not None and self.cfg.get("upload_model", True):
+        self._wandb.save(onnx_path, base_path=policy_dir)
+    except Exception as exc:
+      print(f"[WARN] SuperMimic ONNX export failed (training continues): {exc}")
+
+  def export_policy_to_onnx(
+    self,
+    path: str,
+    filename: str = "policy.onnx",
+    verbose: bool = False,
+  ) -> str:
+    """Export the current deployment policy and attach task metadata."""
+    cpu_policy = Policy(
+      self.obs_dim,
+      self.goal_dim,
+      history=self.history,
+      latent_dim=self.policy_latent_dim,
+      encoder_hidden=self.policy_encoder_hidden,
+      decoder_hidden=self.policy_decoder_hidden,
+      action_dim=self.num_joints,
+    )
+    cpu_policy.load_state_dict(
+      {key: value.detach().cpu() for key, value in self.policy.state_dict().items()}
+    )
+    onnx_path = os.path.join(path, filename)
+    export_policy_to_onnx(
+      cpu_policy,
+      onnx_path,
+      history=self.history,
+      observation_dim=self.obs_dim,
+      goal_dim=self.goal_dim,
+      action_clip=self.action_clip,
+      verbose=verbose,
+    )
+    attach_metadata_to_onnx(onnx_path, self._onnx_metadata())
+    print(f"[SuperMimic] exported ONNX policy: {onnx_path}")
+    return onnx_path
+
+  def _onnx_metadata(self) -> dict[str, list | str | float]:
+    base_metadata = get_base_metadata(
+      self.env,
+      run_path=os.path.basename(os.path.abspath(self.log_dir)),
+    )
+    num_joints = self.num_joints
+    return {
+      "run_path": base_metadata["run_path"],
+      "task_id": self.robot_spec.task_id,
+      "joint_names": base_metadata["joint_names"],
+      "joint_stiffness": base_metadata["joint_stiffness"],
+      "joint_damping": base_metadata["joint_damping"],
+      "default_joint_pos": base_metadata["default_joint_pos"],
+      "action_scale": base_metadata["action_scale"],
+      "anchor_body_name": self.robot_spec.anchor_body,
+      "body_names": list(self.robot_spec.tracked_bodies),
+      "policy_input_names": ["observation_history", "goal"],
+      "observation_history_shape": [self.history, self.obs_dim],
+      "goal_shape": [self.goal_dim],
+      "action_shape": [self.num_joints],
+      "observation_history_frames": self.history,
+      "goal_frames": self.goal_frames,
+      "goal_features_per_frame": self.goal_dim_per_frame,
+      "num_joints": float(num_joints),
+      "control_dt": 0.02,
+      "action_clip": self.action_clip,
+      "observation_layout": [
+        "joint_pos",
+        "joint_vel",
+        "body_ang_vel",
+        "gravity_body",
+        "previous_action",
+        "reference_relative_rot",
+      ],
+      "observation_layout_dims": [
+        num_joints,
+        num_joints,
+        3,
+        3,
+        num_joints,
+        6,
+      ],
+      "goal_layout": [
+        "delta_pos",
+        "relative_rot_6d",
+        "root_lin_vel_local",
+        "root_ang_vel_local",
+        "joint_pos",
+        "joint_vel_scaled",
+      ],
+      "goal_layout_dims": [3, 6, 3, 3, num_joints, num_joints],
+    }
 
   def load(
     self,
