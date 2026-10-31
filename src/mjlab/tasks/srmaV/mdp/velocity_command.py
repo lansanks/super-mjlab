@@ -15,7 +15,7 @@ from mjlab.utils.lab_api.math import (
   wrap_to_pi,
 )
 
-from .terrain_utils import terrain_column_index, terrain_type_mask
+from .terrain_utils import terrain_column_indices, terrain_type_mask
 
 if TYPE_CHECKING:
   import viser
@@ -48,7 +48,7 @@ class UniformVelocityCommand(CommandTerm):
     self.is_world_env = torch.zeros_like(self.is_heading_env)
     self.is_forward_env = torch.zeros_like(self.is_heading_env)
     if self.cfg.terrain_override_name is not None:
-      terrain_column_index(self._env, self.cfg.terrain_override_name)
+      terrain_column_indices(self._env, self.cfg.terrain_override_name)
 
     # World-frame integral of the commanded linear velocity over the episode.
     self.commanded_displacement_w = torch.zeros(self.num_envs, 2, device=self.device)
@@ -384,8 +384,8 @@ class UniformVelocityCommandCfg(CommandTermCfg):
   init_velocity_prob: float = 0.0
   """Probability that an env starts its episode already moving at its sampled
   planar command velocity. Applied on reset only."""
-  terrain_override_name: str | None = None
-  """Named sub-terrain that receives a dedicated forward and heading command."""
+  terrain_override_name: str | tuple[str, ...] | None = None
+  """Named sub-terrain(s) that receive a dedicated forward and heading command."""
   terrain_override_lin_vel_x: tuple[float, float] = (0.3, 1.0)
   """Forward velocity range used on ``terrain_override_name``."""
   terrain_override_heading: float = 0.0

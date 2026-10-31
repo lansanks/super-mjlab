@@ -42,6 +42,13 @@ Added
   failure, preventing cross-terrain command mismatches without teaching the
   policy to stop inside the patch.
 
+- Added per-patch pit-depth randomization to the broken-bridge terrain and
+  expanded the Black SRMAV bridge curriculum to four columns. Each bridge patch
+  now samples its drop uniformly from 0.2-1.0 m instead of using a fixed 1 m
+  pit, and the bridge spawn, command override, and per-foot crossing reward
+  match every bridge column. This gives the depth student a distribution of
+  bridge depths rather than a single memorized drop.
+
 - Added a per-foot bridge crossing reward. Each foot receives a one-time
   0.25 reward per gap after making loaded contact beyond the far edge, for a
   total of 1 per gap and no whole-bridge completion bonus.

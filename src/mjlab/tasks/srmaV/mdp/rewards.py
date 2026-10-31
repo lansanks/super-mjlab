@@ -11,7 +11,7 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor import BuiltinSensor, ContactSensor
 from mjlab.sensor.terrain_height_sensor import TerrainHeightSensor
 from mjlab.tasks.srmaV.mdp.terrain_utils import (
-  terrain_column_index,
+  terrain_column_indices,
   terrain_normal_from_sensors,
 )
 from mjlab.terrains import BoxBrokenBridgeTerrainCfg
@@ -626,17 +626,46 @@ class bridge_gap_crossing:
       raise ValueError("bridge_gap_crossing requires terrain origins.")
 
     self._terrain = terrain
-    self._bridge_column = terrain_column_index(env, params["terrain_name"])
-    if self._bridge_column is None:
+    requested_names = params["terrain_name"]
+    if isinstance(requested_names, str):
+      requested_names = (requested_names,)
+    requested_names = tuple(requested_names)
+    self._bridge_columns = terrain_column_indices(env, requested_names)
+    if not self._bridge_columns:
       raise ValueError("bridge_gap_crossing requires a named bridge terrain.")
+    self._bridge_columns_t = torch.tensor(
+      self._bridge_columns, dtype=torch.long, device=env.device
+    )
 
     generator = terrain.cfg.terrain_generator
-    bridge_cfg = generator.sub_terrains[params["terrain_name"]]
+    bridge_cfg = generator.sub_terrains[requested_names[0]]
     if not isinstance(bridge_cfg, BoxBrokenBridgeTerrainCfg):
       raise TypeError(
         "bridge_gap_crossing requires BoxBrokenBridgeTerrainCfg, got "
         f"{type(bridge_cfg).__name__}."
       )
+    for name in requested_names[1:]:
+      other_cfg = generator.sub_terrains[name]
+      if not isinstance(other_cfg, BoxBrokenBridgeTerrainCfg):
+        raise TypeError(
+          "bridge_gap_crossing requires BoxBrokenBridgeTerrainCfg, got "
+          f"{type(other_cfg).__name__}."
+        )
+      if (
+        other_cfg.num_gaps,
+        other_cfg.gap_width_range,
+        other_cfg.deck_between_gaps,
+        other_cfg.end_platform_width,
+      ) != (
+        bridge_cfg.num_gaps,
+        bridge_cfg.gap_width_range,
+        bridge_cfg.deck_between_gaps,
+        bridge_cfg.end_platform_width,
+      ):
+        raise ValueError(
+          "bridge_gap_crossing requires every bridge column to share the same "
+          f"gap layout, but '{name}' differs from '{requested_names[0]}'."
+        )
     self._bridge_cfg = bridge_cfg
     self._size_x = float(generator.size[0])
     self._num_rows = int(terrain.terrain_origins.shape[0])
@@ -713,7 +742,7 @@ class bridge_gap_crossing:
     command = env.command_manager.get_command(command_name)
     assert command is not None
     command_active = torch.norm(command[:, :2], dim=1) > command_threshold
-    bridge_envs = self._terrain.terrain_types == self._bridge_column
+    bridge_envs = torch.isin(self._terrain.terrain_types, self._bridge_columns_t)
     assert isinstance(bridge_envs, torch.Tensor)
     valid_gap = self._current_gap < self._num_gaps
     gap_index = self._current_gap.clamp_max(self._num_gaps - 1)

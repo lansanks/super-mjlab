@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import torch
@@ -12,30 +13,51 @@ if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
 
 
-def terrain_column_index(env: ManagerBasedRlEnv, terrain_name: str) -> int | None:
-  """Return the curriculum column index for a named sub-terrain."""
+def terrain_column_indices(
+  env: ManagerBasedRlEnv,
+  terrain_names: str | Sequence[str],
+) -> tuple[int, ...]:
+  """Return the curriculum column indices for one or more named sub-terrains."""
   terrain = env.scene.terrain
   if terrain is None or terrain.cfg.terrain_generator is None:
-    return None
+    return ()
   names = list(terrain.cfg.terrain_generator.sub_terrains.keys())
-  if terrain_name not in names:
+  requested = (
+    (terrain_names,) if isinstance(terrain_names, str) else tuple(terrain_names)
+  )
+  if not requested:
+    return ()
+  missing = [name for name in requested if name not in names]
+  if missing:
     raise ValueError(
-      f"Terrain '{terrain_name}' is not present; available terrains: {names}."
+      f"Terrain(s) {missing} are not present; available terrains: {names}."
     )
-  return names.index(terrain_name)
+  return tuple(names.index(name) for name in requested)
+
+
+def terrain_column_index(env: ManagerBasedRlEnv, terrain_name: str) -> int | None:
+  """Return the curriculum column index for a named sub-terrain."""
+  columns = terrain_column_indices(env, terrain_name)
+  return columns[0] if columns else None
 
 
 def terrain_type_mask(
   env: ManagerBasedRlEnv,
   env_ids: torch.Tensor,
-  terrain_name: str,
+  terrain_name: str | Sequence[str],
 ) -> torch.Tensor:
-  """Return which selected environments are on a named sub-terrain."""
-  column = terrain_column_index(env, terrain_name)
+  """Return which selected environments are on one of the named sub-terrains."""
   terrain = env.scene.terrain
-  if column is None or terrain is None:
+  if terrain is None:
     return torch.zeros(len(env_ids), dtype=torch.bool, device=env.device)
-  return terrain.terrain_types[env_ids] == column
+  columns = terrain_column_indices(env, terrain_name)
+  mask = torch.zeros(len(env_ids), dtype=torch.bool, device=env.device)
+  if not columns:
+    return mask
+  types = terrain.terrain_types[env_ids]
+  for column in columns:
+    mask |= types == column
+  return mask
 
 
 def fit_terrain_normal(

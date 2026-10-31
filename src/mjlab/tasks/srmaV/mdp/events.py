@@ -33,7 +33,7 @@ def reset_root_state_with_bridge_spawn(
   pose_range: dict[str, tuple[float, float]],
   velocity_range: dict[str, tuple[float, float]] | None = None,
   asset_cfg: SceneEntityCfg = _DEFAULT_SCENE_CFG,
-  terrain_name: str = "broken_bridge",
+  terrain_name: str | tuple[str, ...] = "broken_bridge",
 ) -> None:
   """Reset normally, then place bridge envs at the deck entry facing +x."""
   env_ids = resolve_env_ids(env, env_ids)

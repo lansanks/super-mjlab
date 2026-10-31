@@ -17,6 +17,7 @@ from mjlab.tasks.srmaV.config.black.env_cfg import (
 )
 from mjlab.tasks.srmaV.config.black.terrain_cfg import (
   BLACK_SRMAV_BRIDGE_TERRAIN,
+  BLACK_SRMAV_BRIDGE_TERRAINS,
   BLACK_SRMAV_TERRAINS_CFG,
 )
 from mjlab.tasks.srmaV.mdp import UniformVelocityCommandCfg
@@ -49,14 +50,14 @@ def test_black_teacher_config_uses_split_latent_dimensions() -> None:
   assert cfg.actor.srmaV_cfg["height_shape"] == BLACK_TEACHER_HEIGHT_SHAPE
 
 
-def test_black_terrain_has_four_curriculum_columns() -> None:
+def test_black_terrain_has_four_bridge_curriculum_columns() -> None:
   assert BLACK_SRMAV_TERRAINS_CFG.curriculum
   assert BLACK_SRMAV_TERRAINS_CFG.num_rows == 10
   assert list(BLACK_SRMAV_TERRAINS_CFG.sub_terrains) == [
     "stairs_up",
     "stairs_down",
     "random_rough",
-    BLACK_SRMAV_BRIDGE_TERRAIN,
+    *BLACK_SRMAV_BRIDGE_TERRAINS,
   ]
   bridge = BLACK_SRMAV_TERRAINS_CFG.sub_terrains[BLACK_SRMAV_BRIDGE_TERRAIN]
   assert isinstance(bridge, BoxBrokenBridgeTerrainCfg)
@@ -64,6 +65,7 @@ def test_black_terrain_has_four_curriculum_columns() -> None:
   assert bridge.num_gaps == 4
   assert bridge.deck_between_gaps == 1.2
   assert bridge.bridge_width is None
+  assert bridge.pit_depth_range == (0.2, 1.0)
   rough = BLACK_SRMAV_TERRAINS_CFG.sub_terrains["random_rough"]
   assert isinstance(rough, HfRandomUniformTerrainCfg)
   assert rough.scale_with_difficulty is False
@@ -73,7 +75,7 @@ def test_black_training_uses_bridge_commands_and_spawn() -> None:
   cfg = black_srmaV_env_cfg()
   twist = cfg.commands["twist"]
   assert isinstance(twist, UniformVelocityCommandCfg)
-  assert twist.terrain_override_name == BLACK_SRMAV_BRIDGE_TERRAIN
+  assert twist.terrain_override_name == BLACK_SRMAV_BRIDGE_TERRAINS
   assert twist.terrain_override_lin_vel_x == (0.3, 1.0)
   assert twist.terrain_override_heading == 0.0
   assert cfg.events["reset_base"].func.__name__ == "reset_root_state_with_bridge_spawn"
@@ -81,7 +83,7 @@ def test_black_training_uses_bridge_commands_and_spawn() -> None:
   bridge_reward = cfg.rewards["bridge_gap_crossing"]
   assert bridge_reward.weight == 0.1
   assert bridge_reward.params["foot_bonus"] == 2.5
-  assert bridge_reward.params["terrain_name"] == BLACK_SRMAV_BRIDGE_TERRAIN
+  assert bridge_reward.params["terrain_name"] == BLACK_SRMAV_BRIDGE_TERRAINS
 
 
 def test_black_flat_teacher_keeps_only_the_shared_terrain_scan() -> None:

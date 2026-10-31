@@ -66,7 +66,16 @@ class BoxBrokenBridgeTerrainCfg(SubTerrainCfg):
   end_platform_width: float = 1.0
   """Flat deck length before the first gap and after the last gap, in meters."""
   pit_depth: float = 1.0
-  """Vertical distance from the bridge surface to the pit floor, in meters."""
+  """Fixed vertical distance from the bridge surface to the pit floor, in meters.
+
+  Ignored when :attr:`pit_depth_range` is set.
+  """
+  pit_depth_range: tuple[float, float] | None = None
+  """Per-patch uniform sampling range for the pit depth, in meters.
+
+  When set, every generated patch samples its own pit depth from this range so
+  the policy sees a distribution of bridge depths instead of a single value.
+  """
   deck_thickness: float = 0.1
   """Bridge deck slab thickness, in meters."""
 
@@ -123,13 +132,19 @@ class BoxBrokenBridgeTerrainCfg(SubTerrainCfg):
   def function(
     self, difficulty: float, spec: mujoco.MjSpec, rng: np.random.Generator
   ) -> TerrainOutput:
-    del rng
     if self.num_gaps < 1:
       raise ValueError("Broken bridge requires at least one gap.")
     bridge_width = self.size[1] if self.bridge_width is None else self.bridge_width
     if bridge_width <= 0.0 or bridge_width > self.size[1]:
       raise ValueError("bridge_width must be positive and fit within terrain.")
-    if self.deck_thickness <= 0.0 or self.pit_depth <= 0.0:
+    if self.pit_depth_range is None:
+      pit_depth = float(self.pit_depth)
+    else:
+      low, high = self.pit_depth_range
+      if low <= 0.0 or high < low:
+        raise ValueError("pit_depth_range must satisfy 0 < low <= high.")
+      pit_depth = float(rng.uniform(low, high))
+    if self.deck_thickness <= 0.0 or pit_depth <= 0.0:
       raise ValueError("deck_thickness and pit_depth must be positive.")
 
     body = spec.body("terrain")
@@ -146,7 +161,7 @@ class BoxBrokenBridgeTerrainCfg(SubTerrainCfg):
     floor = body.add_geom(
       type=mujoco.mjtGeom.mjGEOM_BOX,
       size=(self.size[0] / 2.0, self.size[1] / 2.0, floor_height / 2.0),
-      pos=(self.size[0] / 2.0, center_y, -self.pit_depth - floor_height / 2.0),
+      pos=(self.size[0] / 2.0, center_y, -pit_depth - floor_height / 2.0),
     )
     geometries.append(TerrainGeometry(geom=floor, color=pit_rgba))
 
@@ -158,8 +173,8 @@ class BoxBrokenBridgeTerrainCfg(SubTerrainCfg):
         self.size[0] - 2.0 * border_thickness,
         self.size[1] - 2.0 * border_thickness,
       ),
-      height=self.pit_depth,
-      position=(self.size[0] / 2.0, center_y, -self.pit_depth / 2.0),
+      height=pit_depth,
+      position=(self.size[0] / 2.0, center_y, -pit_depth / 2.0),
     )
     geometries.extend(
       TerrainGeometry(geom=box, color=border_rgba) for box in border_boxes

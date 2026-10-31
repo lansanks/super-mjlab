@@ -29,7 +29,7 @@ from mjlab.tasks.srmaV.srmaV_env_cfg import (
   make_srmaV_env_cfg,
 )
 
-from .terrain_cfg import BLACK_SRMAV_BRIDGE_TERRAIN, BLACK_SRMAV_TERRAINS_CFG
+from .terrain_cfg import BLACK_SRMAV_BRIDGE_TERRAINS, BLACK_SRMAV_TERRAINS_CFG
 
 # Paper Table II: system delay 0-15 ms. One physics substep is 5 ms, so the
 # command lag spans 0-3 substeps, resampled once per 20 ms policy step.
@@ -190,7 +190,7 @@ def black_srmaV_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
   twist_cmd = cfg.commands["twist"]
   assert isinstance(twist_cmd, UniformVelocityCommandCfg)
-  twist_cmd.terrain_override_name = BLACK_SRMAV_BRIDGE_TERRAIN
+  twist_cmd.terrain_override_name = BLACK_SRMAV_BRIDGE_TERRAINS
   twist_cmd.terrain_override_lin_vel_x = (0.3, 1.0)
   twist_cmd.terrain_override_heading = 0.0
 
@@ -200,7 +200,7 @@ def black_srmaV_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     mode="reset",
     params={
       **reset_base.params,
-      "terrain_name": BLACK_SRMAV_BRIDGE_TERRAIN,
+      "terrain_name": BLACK_SRMAV_BRIDGE_TERRAINS,
     },
   )
 
@@ -305,7 +305,7 @@ def black_srmaV_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       "contact_sensor_name": feet_ground_cfg.name,
       "command_name": "twist",
       "asset_cfg": SceneEntityCfg("robot", site_names=site_names),
-      "terrain_name": BLACK_SRMAV_BRIDGE_TERRAIN,
+      "terrain_name": BLACK_SRMAV_BRIDGE_TERRAINS,
       "foot_bonus": 2.5,
       "far_margin": 0.02,
       "contact_force_threshold": 10.0,
