@@ -172,6 +172,44 @@ def test_pyramid_stairs_border_present_at_zero_difficulty(cfg_cls):
     assert np.isclose(geom.pos[2] + geom.size[2], 0.0, atol=1e-6)
 
 
+@pytest.mark.parametrize(
+  "cfg_cls", [BoxPyramidStairsTerrainCfg, BoxInvertedPyramidStairsTerrainCfg]
+)
+def test_pyramid_stairs_step_width_range(cfg_cls):
+  """step_width_range widens the run with the rise instead of steepening it."""
+  fixed = cfg_cls(
+    size=(8.0, 8.0),
+    step_height_range=(0.15, 0.3),
+    step_width=0.3,
+    platform_width=3.0,
+    border_width=1.0,
+  )
+  for difficulty in (0.0, 0.5, 1.0):
+    assert fixed.step_run(difficulty) == 0.3
+
+  growing = cfg_cls(
+    size=(8.0, 8.0),
+    step_height_range=(0.15, 0.3),
+    step_width=0.3,
+    step_width_range=(0.3, 0.42),
+    platform_width=3.0,
+    border_width=1.0,
+  )
+  assert np.isclose(growing.step_run(0.0), 0.3)
+  assert np.isclose(growing.step_run(0.5), 0.36)
+  assert np.isclose(growing.step_run(1.0), 0.42)
+
+  # Every row must still produce compilable geometry with non-degenerate boxes.
+  for difficulty in (0.0, 0.5, 1.0):
+    spec = mujoco.MjSpec()
+    spec.worldbody.add_body(name="terrain")
+    output = growing.function(
+      difficulty=difficulty, spec=spec, rng=np.random.default_rng(0)
+    )
+    assert output.geometries
+    spec.compile()
+
+
 @pytest.mark.parametrize("preset_name", sorted(ALL_TERRAIN_PRESETS))
 @pytest.mark.parametrize("difficulty", [0.0, 1.0])
 def test_preset_compiles_across_difficulty(preset_name, difficulty):

@@ -71,6 +71,12 @@ class RslRlModelCfg:
   ``privilege_latent_dim``, ``external_mode`` and encoder hidden dimensions.
   """
 
+  srmaM_cfg: dict[str, Any] | None = None
+  """SRMAM teacher overrides passed to ``SRMAMTeacherActorModel`` (actor only).
+
+  Mirrors ``srmaV_cfg``; the SRMAM expert/student stack reads the same keys.
+  """
+
   student_cfg: dict[str, Any] | None = None
   """SRMA student overrides passed to ``SRMAStudentActorModel``.
 
@@ -177,6 +183,14 @@ class RslRlBaseRunnerCfg:
   load_checkpoint: str = "model_.*.pt"
   """The checkpoint file to load. Default is "model_.*.pt" (all). If regex expression,
   the latest (alphabetical order) matching file will be loaded.
+  """
+  reset_std_after_load: float | None = None
+  """Overwrite the action noise std once a checkpoint has been loaded.
+
+  PPO learns a state-independent ``std`` that shrinks as the policy converges,
+  so warm-starting a new task from a converged checkpoint explores too little.
+  Set this (e.g. ``0.6``) to keep the actor weights but reopen exploration.
+  Only applies when ``resume`` is true; ``None`` keeps the checkpoint value.
   """
   clip_actions: float | None = None
   """The clipping range for action values. If None (default), no clipping is applied."""

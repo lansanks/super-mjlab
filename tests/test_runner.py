@@ -152,6 +152,50 @@ def test_runner_handles_old_checkpoints_without_env_state(env, device):
     assert wrapped_env.unwrapped.common_step_counter == 999
 
 
+def test_runner_reset_action_std_keeps_weights(env, device):
+  """reset_action_std should reopen exploration without touching the MLP."""
+  wrapped_env = RslRlVecEnvWrapper(env)
+  agent_cfg = RslRlOnPolicyRunnerCfg(
+    num_steps_per_env=4, max_iterations=10, save_interval=5
+  )
+
+  with tempfile.TemporaryDirectory() as tmpdir:
+    runner = MjlabOnPolicyRunner(
+      wrapped_env, asdict(agent_cfg), log_dir=tmpdir, device=device
+    )
+    policy = runner.alg.get_policy()
+    weight_before = next(policy.mlp.parameters()).detach().clone()
+    with torch.no_grad():
+      policy.distribution.std_param.fill_(0.15)
+
+    runner.reset_action_std(0.6)
+
+    assert torch.allclose(
+      policy.distribution.std_param,
+      torch.full_like(policy.distribution.std_param, 0.6),
+    )
+    assert torch.equal(next(policy.mlp.parameters()), weight_before)
+
+
+def test_runner_reset_action_std_clamps_to_std_range(env, device):
+  """Out-of-range std requests are clamped instead of silently exploding."""
+  wrapped_env = RslRlVecEnvWrapper(env)
+  agent_cfg = RslRlOnPolicyRunnerCfg(
+    num_steps_per_env=4, max_iterations=10, save_interval=5
+  )
+
+  with tempfile.TemporaryDirectory() as tmpdir:
+    runner = MjlabOnPolicyRunner(
+      wrapped_env, asdict(agent_cfg), log_dir=tmpdir, device=device
+    )
+    high = float(runner.alg.get_policy().distribution.std_range[1])
+
+    runner.reset_action_std(high * 10.0)
+
+    std = runner.alg.get_policy().distribution.std_param
+    assert torch.allclose(std, torch.full_like(std, high))
+
+
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_export_policy_to_onnx(env, device):
   """runner.export_policy_to_onnx() produces a valid ONNX file."""

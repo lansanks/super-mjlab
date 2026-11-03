@@ -171,6 +171,8 @@ def run_train(task_id: str, cfg: TrainConfig, log_dir: Path) -> None:
   if resume_path is not None:
     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
     runner.load(str(resume_path))
+    if cfg.agent.reset_std_after_load is not None:
+      runner.reset_action_std(cfg.agent.reset_std_after_load)
 
   runner.learn(
     num_learning_iterations=cfg.agent.max_iterations, init_at_random_ep_len=True

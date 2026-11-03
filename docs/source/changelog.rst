@@ -8,6 +8,45 @@ Upcoming version (not yet released)
 Added
 ^^^^^
 
+- Added the ``Mjlab-SRMAM-Expert-Stairs-Black`` expert task, a stairs-only
+  curriculum with four ascending and four descending columns (8 in total). Rows
+  interpolate the step height from 15 cm to 30 cm; columns hold the step run
+  fixed at 42, 36, 30 and 26 cm, so the same rise spans 36 to 49 degrees instead
+  of the run growing with the rise and cancelling part of the difficulty. The
+  reward set matches the walking expert; only ``stair_climb_progress``'s
+  ``max_step_height`` follows the new 30 cm ceiling. The stairs expert also
+  raises its thigh-contact termination gate from 10 N to 50 N, because
+  descending sweeps the front thigh past the step nose and the shared gate ended
+  those episodes before the robot actually fell. The higher gate is local to
+  this task; every other SRMAM task keeps 10 N.
+
+- Added ``step_width_range`` to ``BoxPyramidStairsTerrainCfg`` and
+  ``BoxInvertedPyramidStairsTerrainCfg``. When set, the run is interpolated by
+  difficulty alongside the step height, so taller steps extend instead of
+  steepening. Unset it keeps the existing fixed ``step_width`` behaviour.
+
+- Added ``--agent.reset-std-after-load`` so a resumed run can reload actor
+  weights but reopen exploration. PPO learns a state-independent action std
+  that collapses as the policy converges, and the checkpoint always carries it,
+  so warm-starting a new task from a converged run otherwise explores too
+  little. The value is clamped to the distribution's ``std_range`` and leaves
+  the actor MLP untouched.
+
+- Added the ``Mjlab-SRMAM-Expert-Loco-Black`` expert task, the first of the
+  SRMAM specialist teachers. It reuses the Black SRMAM robot, sensors, and
+  teacher interface but swaps the four-column bridge curriculum for SRMA's
+  rough map (10x7 curriculum over flat, stairs, slopes, rough, and waves, with
+  25 cm stair steps), and drops the bridge command override, bridge spawn,
+  gap-crossing reward, and per-patch boundary termination.
+
+- Added the ``Mjlab-SRMAM-Teacher-Rough-Black`` and
+  ``Mjlab-SRMAM-Student-Rough-Black`` tasks, a renamed copy of the SRMAV
+  pipeline that will host the multi-expert distillation work. The copy keeps
+  SRMAV's teacher network, Black curriculum, and depth-conditioned DAgger
+  student unchanged, adds an ``srmaM_cfg`` model field alongside ``srmaV_cfg``,
+  and defaults the student's teacher checkpoint to the last SRMAV Black teacher
+  until SRMAM experts exist.
+
 - Added ``Mjlab-Velocity-SuperMimic-Unitree-Go1`` and its flat variant, which
   train the stock Go1 velocity task with a SuperMimic model-based loop instead
   of PPO. The actor observation intentionally drops base linear velocity and the
@@ -174,6 +213,10 @@ Added
 
 Changed
 ^^^^^^^
+
+- Lowered SRMAM's ``stair_climb_progress`` weight from 0.25 to 0.15. The shared
+  rough map also pays this term for random 2-10 cm height gains, so on the
+  normal-walking expert it competed with the tracking terms.
 
 - Removed SRMAV's reference-only blind student implementation, its copied
   DAgger/storage/runner stack, and the unused Go1 SRMAV reference tasks. The

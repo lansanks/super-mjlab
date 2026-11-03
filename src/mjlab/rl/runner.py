@@ -1,3 +1,4 @@
+import math
 import os
 from pathlib import Path
 
@@ -30,6 +31,7 @@ class MjlabOnPolicyRunner(OnPolicyRunner):
           "him_cfg",
           "srma_cfg",
           "srmaV_cfg",
+          "srmaM_cfg",
           "student_cfg",
         ):
           if train_cfg[key].get(opt) is None:
@@ -151,3 +153,34 @@ class MjlabOnPolicyRunner(OnPolicyRunner):
     if infos and "env_state" in infos:
       self.env.unwrapped.common_step_counter = infos["env_state"]["common_step_counter"]
     return infos
+
+  def reset_action_std(self, std: float) -> None:
+    """Overwrite the learned action noise std, keeping the loaded weights.
+
+    Warm-starting a new task from a converged checkpoint inherits a small std,
+    which suppresses exploration exactly where a new behaviour is needed. This
+    resets it without touching the actor MLP; PPO will shrink it again as the
+    fine-tune converges.
+    """
+    policy = self.alg.get_policy()
+    dist = getattr(policy, "distribution", None)
+    if dist is None:
+      raise ValueError(
+        f"{type(policy).__name__} has no distribution; cannot reset action std."
+      )
+    low, high = float(dist.std_range[0]), float(dist.std_range[1])
+    target = min(max(float(std), low), high)
+    if target != float(std):
+      print(
+        f"[WARN]: reset std {std} is outside [{low}, {high}]; using {target}.",
+      )
+    with torch.no_grad():
+      if hasattr(dist, "std_param"):
+        before = float(dist.std_param.mean())
+        dist.std_param.fill_(target)
+      elif hasattr(dist, "log_std_param"):
+        before = float(dist.log_std_param.exp().mean())
+        dist.log_std_param.fill_(math.log(target))
+      else:
+        raise ValueError(f"{type(dist).__name__} has no std parameter.")
+    print(f"[INFO]: Reset action std {before:.4f} -> {target:.4f}")
