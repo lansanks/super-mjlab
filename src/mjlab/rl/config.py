@@ -71,12 +71,6 @@ class RslRlModelCfg:
   ``privilege_latent_dim``, ``external_mode`` and encoder hidden dimensions.
   """
 
-  srmaM_cfg: dict[str, Any] | None = None
-  """SRMAM teacher overrides passed to ``SRMAMTeacherActorModel`` (actor only).
-
-  Mirrors ``srmaV_cfg``; the SRMAM expert/student stack reads the same keys.
-  """
-
   student_cfg: dict[str, Any] | None = None
   """SRMA student overrides passed to ``SRMAStudentActorModel``.
 

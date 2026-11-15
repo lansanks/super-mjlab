@@ -8,17 +8,28 @@ Upcoming version (not yet released)
 Added
 ^^^^^
 
-- Added the ``Mjlab-SRMAM-Expert-Stairs-Black`` expert task, a stairs-only
-  curriculum with four ascending and four descending columns (8 in total). Rows
-  interpolate the step height from 15 cm to 30 cm; columns hold the step run
-  fixed at 42, 36, 30 and 26 cm, so the same rise spans 36 to 49 degrees instead
-  of the run growing with the rise and cancelling part of the difficulty. The
-  reward set matches the walking expert; only ``stair_climb_progress``'s
-  ``max_step_height`` follows the new 30 cm ceiling. The stairs expert also
-  raises its thigh-contact termination gate from 10 N to 50 N, because
-  descending sweeps the front thigh past the step nose and the shared gate ended
-  those episodes before the robot actually fell. The higher gate is local to
-  this task; every other SRMAM task keeps 10 N.
+- Added the Wolf wheel-legged robot (``mjlab.asset_zoo.robots:get_wolf_robot_cfg``)
+  and the ``Mjlab-SRMA-Teacher-Rough-Wolf`` / ``Mjlab-SRMA-Student-Rough-Wolf``
+  tasks, so the SRMA pipeline can now train the XJTU RoboCon Wolf robot (16
+  DoF: 12 leg joints + 4 driven wheels). Wolf splits its action space into a
+  12-dim leg position term and a 4-dim wheel velocity term, with the wheel sign
+  contract encoded in the velocity scale so a positive policy action drives the
+  chassis forward. Wheel joint positions are excluded from the observation
+  (they integrate freely under velocity control) while wheel speeds get their
+  own observation term; the teacher height map is resampled to (13, 11) to
+  cover the wheel footprint, and foot-height / clearance / climb terms run on
+  wheel-center sites added to the mjlab copy of the MJCF. Wheel collision geoms
+  are raised to ``condim=6`` so SRMA's three-axis friction randomization applies
+  to them, and the foot-slip penalty is disabled because a rolling wheel's
+  center moves without slipping. The MJCF reference (qpos0) height is lifted to
+  the zero-joint standing pose so MuJoCo Warp's contact allocation covers the
+  robot on the terrain at compile time.
+
+- Added ``--debug-reset-reasons`` to play. It prints the termination terms that
+  fired for every reset (with the episode time and base height just before the
+  reset) and a tally of reasons when the viewer exits. Training only aggregates
+  ``Episode_Termination/*``, so this is the quickest way to see whether a
+  behaviour is failing on contact, stalling, or timing out.
 
 - Added ``step_width_range`` to ``BoxPyramidStairsTerrainCfg`` and
   ``BoxInvertedPyramidStairsTerrainCfg``. When set, the run is interpolated by
@@ -31,21 +42,6 @@ Added
   so warm-starting a new task from a converged run otherwise explores too
   little. The value is clamped to the distribution's ``std_range`` and leaves
   the actor MLP untouched.
-
-- Added the ``Mjlab-SRMAM-Expert-Loco-Black`` expert task, the first of the
-  SRMAM specialist teachers. It reuses the Black SRMAM robot, sensors, and
-  teacher interface but swaps the four-column bridge curriculum for SRMA's
-  rough map (10x7 curriculum over flat, stairs, slopes, rough, and waves, with
-  25 cm stair steps), and drops the bridge command override, bridge spawn,
-  gap-crossing reward, and per-patch boundary termination.
-
-- Added the ``Mjlab-SRMAM-Teacher-Rough-Black`` and
-  ``Mjlab-SRMAM-Student-Rough-Black`` tasks, a renamed copy of the SRMAV
-  pipeline that will host the multi-expert distillation work. The copy keeps
-  SRMAV's teacher network, Black curriculum, and depth-conditioned DAgger
-  student unchanged, adds an ``srmaM_cfg`` model field alongside ``srmaV_cfg``,
-  and defaults the student's teacher checkpoint to the last SRMAV Black teacher
-  until SRMAM experts exist.
 
 - Added ``Mjlab-Velocity-SuperMimic-Unitree-Go1`` and its flat variant, which
   train the stock Go1 velocity task with a SuperMimic model-based loop instead
@@ -214,10 +210,6 @@ Added
 Changed
 ^^^^^^^
 
-- Lowered SRMAM's ``stair_climb_progress`` weight from 0.25 to 0.15. The shared
-  rough map also pays this term for random 2-10 cm height gains, so on the
-  normal-walking expert it competed with the tracking terms.
-
 - Removed SRMAV's reference-only blind student implementation, its copied
   DAgger/storage/runner stack, and the unused Go1 SRMAV reference tasks. The
   Black depth-conditioned student is now the canonical SRMAV student.
@@ -266,6 +258,24 @@ Changed
 
 Fixed
 ^^^^^
+
+- Wolf SRMA training no longer aborts on the first environment that hits a
+  numerical NaN. The wheel-legged robot's cylinder wheel contacts occasionally
+  produce a degenerate contact manifold on the MuJoCo Warp convex/CCD path
+  (reproduced with the official NaN guard: a fallen robot with a wheel pressed
+  against a terrain step generated duplicated near-zero-separation contacts and
+  the next solver step produced NaN in ``qpos``/``qvel``). A ``nan_term``
+  termination using ``mdp.nan_detection`` now marks those environments as
+  terminated so they reset and training continues, following the mjlab NaN
+  guide; the ``foot_contact_forces`` observation is also sanitized with
+  ``torch.nan_to_num`` so a transient non-finite contact-force reading cannot
+  trip rsl_rl's global NaN check by itself.
+
+- Training no longer dies when the W&B API is unreachable. ``train`` now probes
+  the API before building the runner and switches to ``WANDB_MODE=offline`` when
+  the probe fails, so a blocked proxy node or a network hiccup at startup leaves
+  the metrics on disk (``wandb sync wandb/run-*`` uploads them later) instead of
+  raising ``CommError`` and killing the run.
 
 - HiMLoco's estimator gradients are now cleared after its independent Adam
   step, and PPO clips only the actor and critic parameters. Previously stale

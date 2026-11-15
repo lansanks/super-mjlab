@@ -22,3 +22,12 @@ from mjlab.asset_zoo.robots.unitree_go1.go1_constants import (
 from mjlab.asset_zoo.robots.unitree_go1.go1_constants import (
   get_go1_robot_cfg as get_go1_robot_cfg,
 )
+from mjlab.asset_zoo.robots.wolf.wolf_constants import (
+  WOLF_LEG_ACTION_SCALE_BY_JOINT as WOLF_LEG_ACTION_SCALE_BY_JOINT,
+)
+from mjlab.asset_zoo.robots.wolf.wolf_constants import (
+  WOLF_WHEEL_ACTION_SCALE_BY_JOINT as WOLF_WHEEL_ACTION_SCALE_BY_JOINT,
+)
+from mjlab.asset_zoo.robots.wolf.wolf_constants import (
+  get_wolf_robot_cfg as get_wolf_robot_cfg,
+)

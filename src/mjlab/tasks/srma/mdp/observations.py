@@ -51,6 +51,10 @@ def foot_contact_forces(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tenso
   sensor_data = sensor.data
   assert sensor_data.force is not None
   forces_flat = sensor_data.force.flatten(start_dim=1)  # [B, N*3]
+  # 轮足在退化接触瞬间可能读出非有限接触力（mujoco_warp 凸体接触），一旦进入
+  # 观测就会触发 rsl_rl 的全局 NaN 检查并终止训练。官方 NaN 流程建议先防住
+  # 观测层，再让 nan_term 处理真正的物理状态 NaN。
+  forces_flat = torch.nan_to_num(forces_flat, nan=0.0, posinf=0.0, neginf=0.0)
   return torch.sign(forces_flat) * torch.log1p(torch.abs(forces_flat))
 
 

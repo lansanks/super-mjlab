@@ -114,6 +114,24 @@ def black_srma_student_dagger_runner_cfg(
   )
 
 
+def wolf_srma_student_dagger_runner_cfg(
+  teacher_checkpoint: str = "",
+  max_iterations: int = 500,
+  height_shape: tuple[int, int] = (13, 11),
+) -> RslRlSRMAStudentRunnerCfg:
+  """Create the Wolf SRMA student training configuration.
+
+  The teacher checkpoint must come from a Wolf SRMA teacher run. It is left
+  empty by default so the task cannot silently load another robot's weights.
+  """
+  return _srma_student_dagger_runner_cfg(
+    experiment_name="wolf_srma_student",
+    teacher_checkpoint=teacher_checkpoint,
+    max_iterations=max_iterations,
+    height_shape=height_shape,
+  )
+
+
 def _srma_student_dagger_runner_cfg(
   experiment_name: str,
   teacher_checkpoint: str,

@@ -1,1 +1,0 @@
-"""SRMAM locomotion task."""

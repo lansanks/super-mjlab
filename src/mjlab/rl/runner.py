@@ -31,7 +31,6 @@ class MjlabOnPolicyRunner(OnPolicyRunner):
           "him_cfg",
           "srma_cfg",
           "srmaV_cfg",
-          "srmaM_cfg",
           "student_cfg",
         ):
           if train_cfg[key].get(opt) is None:

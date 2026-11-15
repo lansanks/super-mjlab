@@ -1,5 +1,6 @@
 """Script to play RL agent with RSL-RL."""
 
+import atexit
 import os
 import sys
 import time as _time
@@ -117,6 +118,8 @@ class PlayConfig:
   """Spawn all play environments on this named curriculum sub-terrain."""
   no_terminations: bool = False
   """Disable all termination conditions (useful for viewing motions with dummy agents)."""
+  debug_reset_reasons: bool = False
+  """Print which termination term reset each environment, and a tally at exit."""
   log_root: str = "logs/rsl_rl"
   """Root directory under which experiment logs are written."""
 
@@ -153,6 +156,61 @@ def _configure_play_terrain(
     terrain.terrain_levels,
     terrain.terrain_types,
   ]
+
+
+def _install_reset_reason_printer(env: RslRlVecEnvWrapper) -> None:
+  """Print why each play environment just reset, plus a tally at exit.
+
+  Training only aggregates ``Episode_Termination/*`` across everything, which
+  cannot say which condition ended the episode you are watching. Wrapping
+  ``env.step`` keeps the hook local to play; the termination manager keeps the
+  per-term flags of the last compute call, so they can be read right after the
+  step that reset the env.
+  """
+  inner = env.unwrapped
+  manager = inner.termination_manager
+  original_step = env.step
+  tally: dict[str, int] = {}
+
+  def step_with_reasons(actions: torch.Tensor):
+    # The reset zeroes these buffers, so snapshot them first.
+    prev_steps = inner.episode_length_buf.clone()
+    prev_height = inner.scene["robot"].data.root_link_pos_w[:, 2].clone()
+    result = original_step(actions)
+
+    reset = inner.reset_terminated | inner.reset_time_outs
+    env_ids = torch.nonzero(reset, as_tuple=False).flatten().tolist()
+    if not env_ids:
+      return result
+
+    lines = []
+    for env_id in env_ids[:8]:
+      reasons = [
+        name for name in manager.active_terms if bool(manager.get_term(name)[env_id])
+      ]
+      for reason in reasons:
+        tally[reason] = tally.get(reason, 0) + 1
+      if not reasons:
+        reasons = ["<no term fired>"]
+      kind = "trunc" if bool(inner.reset_time_outs[env_id]) else "fail "
+      seconds = float(prev_steps[env_id]) * inner.step_dt
+      lines.append(
+        f"  env {env_id:02d} {kind} t={seconds:5.2f}s z={float(prev_height[env_id]):6.2f}m"
+        f" --> {', '.join(reasons)}"
+      )
+    suffix = f" (+{len(env_ids) - 8} more)" if len(env_ids) > 8 else ""
+    print(f"[reset] {len(env_ids)} env(s){suffix}\n" + "\n".join(lines), flush=True)
+    return result
+
+  def _print_tally() -> None:
+    if not tally:
+      return
+    ordered = sorted(tally.items(), key=lambda item: -item[1])
+    summary = ", ".join(f"{name}={count}" for name, count in ordered)
+    print(f"[reset-summary] {summary}", flush=True)
+
+  atexit.register(_print_tally)
+  env.step = step_with_reasons  # type: ignore[method-assign]
 
 
 def run_play(task_id: str, cfg: PlayConfig):
@@ -388,6 +446,9 @@ def run_play(task_id: str, cfg: PlayConfig):
     del has_display
   else:
     resolved_viewer = cfg.viewer
+
+  if cfg.debug_reset_reasons:
+    _install_reset_reason_printer(env)
 
   if resolved_viewer == "native":
     NativeMujocoViewer(env, policy).run()

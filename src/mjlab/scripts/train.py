@@ -18,7 +18,7 @@ from mjlab.tasks.tracking.mdp import MotionCommandCfg
 from mjlab.utils.gpu import select_gpus
 from mjlab.utils.os import dump_yaml, get_checkpoint_path, get_wandb_checkpoint_path
 from mjlab.utils.torch import configure_torch_backends
-from mjlab.utils.wandb import add_wandb_tags
+from mjlab.utils.wandb import add_wandb_tags, ensure_wandb_reachable
 from mjlab.utils.wrappers import VideoRecorder
 
 
@@ -163,6 +163,10 @@ def run_train(task_id: str, cfg: TrainConfig, log_dir: Path) -> None:
   if rank == 0:
     dump_yaml(log_dir / "params" / "env.yaml", env_cfg)
     dump_yaml(log_dir / "params" / "agent.yaml", agent_cfg)
+
+  # Do not let an unreachable W&B API kill a long training run.
+  if cfg.agent.logger == "wandb":
+    ensure_wandb_reachable()
 
   runner = runner_cls(env, agent_cfg, str(log_dir), device, **runner_kwargs)
 
